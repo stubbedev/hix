@@ -12,6 +12,7 @@ phix diff [a] [b]  # package diff between generations (default: previous vs curr
 phix generations   # running and boot generations, versions, closure sizes
 phix secret        # edit, set or rotate a sops secret under secrets/
 phix trust         # add an age recipient to .sops.yaml and re-wrap secrets/*
+phix mcp           # MCP server for nixpkgs, options, flakes, caches and docs
 phix help          # every verb
 ```
 
@@ -35,6 +36,49 @@ Commands that change the system, the flake or its secrets (every rebuild
 verb, `rollback`, `gc`, `update`, `upgrade`, `trust`, `secret`) take a lock
 in `~/.cache/phix/run.lock`; a second one fails at once, naming the pid that
 holds it.
+
+## MCP server
+
+`phix mcp` serves a [Model Context Protocol](https://modelcontextprotocol.io)
+server for the Nix ecosystem over stdio; it needs no phix config. It queries
+live APIs (search.nixos.org, NixHub, FlakeHub, cache.nixos.org, the NixOS
+wiki, nix.dev, Noogle, the nix-darwin option docs), so it is more current
+than `nix search`.
+
+```json
+{ "mcpServers": { "nix": { "command": "phix", "args": ["mcp"] } } }
+```
+
+`--transport` picks how clients connect: `stdio` (the default), `http` (MCP
+Streamable HTTP, on `127.0.0.1:8765/mcp`) or `sse` (the legacy HTTP+SSE
+transport, on `127.0.0.1:8765/sse`), with `--addr` and `--path` to move them.
+Over `http` and `sse` many clients share one server, a `/healthz` endpoint
+answers, and a client pins the flake directory that `flake-inputs` works on
+per request with an `X-Repo-Root` header; over stdio it is taken from the
+client's MCP roots. With `PHIX_MCP_TOKEN` set, `http` and `sse` clients must
+send it as `Authorization: Bearer <token>` or `X-Mcp-Token`.
+
+Two tools are exposed:
+
+- **`nix`** dispatches on `action`:
+  - `search`: keyword search. `source` is `nixos` (default), `home-manager`,
+    `darwin`, `flakes`, `flakehub`, `nixvim`, `wiki`, `nix-dev`, `noogle` or
+    `nixhub`; for `nixos`, `type` is `packages`, `options`, `programs` or
+    `flakes`.
+  - `info`: details for an exact package, option, FlakeHub `org/project`,
+    wiki or nix.dev page, Noogle function or NixHub package.
+  - `stats`: counts per source.
+  - `browse`: walk the nix-darwin or Noogle option tree by prefix.
+  - `channels`: NixOS channels with their indexed and branch revisions.
+  - `flake-inputs`: `type=list|ls|read` over a flake's inputs (runs
+    `nix flake archive`).
+  - `cache`: binary cache status of a package across systems.
+  - `store`: `type=ls|read` of an absolute `/nix/store/` path.
+- **`nix_versions`**: version history from NixHub: which nixpkgs commit
+  shipped a version, its attribute path and platforms.
+
+Nixvim's option docs moved to a WASM-decoded index, so `source=nixvim`
+reports that it is unavailable rather than returning empty results.
 
 ## Runtime
 

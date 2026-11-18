@@ -193,6 +193,10 @@ Environment:
 	if err != nil {
 		return nil, err
 	}
+	mcp, err := a.mcpCmd()
+	if err != nil {
+		return nil, err
+	}
 	root.AddCommand(
 		a.replCmd(),
 		exclusive(a.rollbackCmd()),
@@ -202,6 +206,7 @@ Environment:
 		exclusive(a.updateCmd()),
 		exclusive(upgrade),
 		a.whoamiCmd(),
+		mcp,
 		exclusive(a.trustCmd()),
 		exclusive(a.secretCmd()),
 	)

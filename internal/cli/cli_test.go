@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -225,6 +226,12 @@ func TestUsageErrorsExitTwo(t *testing.T) {
 		{"rollback", "1", "2"},
 		{"--attr", "a.b", "generations"},
 		{"gc", "stray"},
+		{"mcp", "stray"},
+		{"mcp", "--transport", "carrier-pigeon"},
+		{"mcp", "--addr", "127.0.0.1:1"},
+		{"mcp", "--path", "/x"},
+		{"mcp", "--transport", "http", "--addr", ""},
+		{"mcp", "--transport", "sse", "--path", "x"},
 	}
 	for _, args := range cases {
 		if _, errOut, code := h.run("", args...); code != 2 {
@@ -244,6 +251,59 @@ func TestMissingConfig(t *testing.T) {
 	code = New(proc.Streams{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut}, Terminal{}).Run(context.Background(), []string{"completion", "zsh"})
 	if code != 0 || !strings.HasPrefix(out.String(), "#compdef phix") {
 		t.Fatalf("completion without a config: exit %d, output %q", code, out.String())
+	}
+}
+
+type hangUpAfter struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	reply  string
+	hangUp func()
+}
+
+func (w *hangUpAfter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	n, err := w.buf.Write(p)
+	if strings.Contains(w.buf.String(), w.reply) {
+		w.hangUp()
+	}
+	return n, err
+}
+
+func TestMCPServesStdioWithoutConfig(t *testing.T) {
+	newHarness(t)
+	t.Setenv("PHIX_CONFIG", filepath.Join(t.TempDir(), "missing.yaml"))
+	in, client := io.Pipe()
+	out := &hangUpAfter{reply: `"id":2,"result"`, hangUp: func() { client.Close() }}
+	go func() {
+		for _, req := range []string{
+			`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}`,
+			`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+			`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		} {
+			if _, err := io.WriteString(client, req+"\n"); err != nil {
+				return
+			}
+		}
+	}()
+	var errOut bytes.Buffer
+	code := New(proc.Streams{Stdin: in, Stdout: out, Stderr: &errOut}, Terminal{}).Run(context.Background(), []string{"mcp"})
+	if code != 0 {
+		t.Fatalf("phix mcp exited %d: %s", code, errOut.String())
+	}
+	for _, want := range []string{`"name":"phix-mcp"`, `"name":"nix"`, `"name":"nix_versions"`} {
+		if !strings.Contains(out.buf.String(), want) {
+			t.Errorf("phix mcp output lacks %s:\n%s", want, out.buf.String())
+		}
+	}
+}
+
+func TestMCPTokenRequiresHTTP(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv(mcpTokenEnv, "secret")
+	if _, errOut, code := h.run("", "mcp"); code != 2 || !strings.Contains(errOut, mcpTokenEnv) {
+		t.Fatalf("phix mcp with a token over stdio exited %d: %s", code, errOut)
 	}
 }
 

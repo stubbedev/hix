@@ -1,0 +1,353 @@
+package nixmcp
+
+import (
+	"context"
+	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+)
+
+var renderedHTMLTag = regexp.MustCompile(`<[^>]+>`)
+
+const (
+	nixosOptionType       = "option"
+	homeManagerOptionType = "home-manager-option"
+)
+
+func cleanOptionDesc(desc string) string {
+	if strings.Contains(desc, "<rendered-html>") {
+		desc = strings.ReplaceAll(desc, "<rendered-html>", "")
+		desc = strings.ReplaceAll(desc, "</rendered-html>", "")
+		desc = strings.TrimSpace(renderedHTMLTag.ReplaceAllString(desc, ""))
+	}
+	return desc
+}
+
+func searchNixOS(ctx context.Context, query, searchType string, limit int, channel string) string {
+	if searchType == "flakes" {
+		return searchFlakes(ctx, query, limit)
+	}
+	if searchType == "options" {
+		return searchOptions(ctx, query, "options", nixosOptionType, limit, channel)
+	}
+
+	channels := getChannels(ctx)
+	index, ok := channels[channel]
+	if !ok {
+		return errMsg(fmt.Sprintf("Invalid channel '%s'. %s", channel, channelSuggestions(ctx, channel)))
+	}
+
+	var q map[string]any
+	switch searchType {
+	case "packages":
+		pnameQuery := query
+		if _, after, ok := strings.CutLast(query, "."); ok {
+			pnameQuery = after
+		}
+		q = map[string]any{"bool": map[string]any{
+			"must": []any{map[string]any{"term": map[string]any{"type": "package"}}},
+			"should": []any{
+				map[string]any{"match": map[string]any{"package_pname": map[string]any{"query": pnameQuery, "boost": 3}}},
+				map[string]any{"match": map[string]any{"package_attr_name": map[string]any{"query": query, "boost": 2}}},
+				map[string]any{"match": map[string]any{"package_description": pnameQuery}},
+			},
+			"minimum_should_match": 1,
+		}}
+	default:
+		q = map[string]any{"bool": map[string]any{
+			"must": []any{map[string]any{"term": map[string]any{"type": "package"}}},
+			"should": []any{
+				map[string]any{"match": map[string]any{"package_programs": map[string]any{"query": query, "boost": 2}}},
+				map[string]any{"match": map[string]any{"package_pname": query}},
+			},
+			"minimum_should_match": 1,
+		}}
+	}
+
+	hits, err := esQuery(ctx, index, q, limit)
+	if err != nil {
+		return errMsg(err.Error())
+	}
+	if len(hits) == 0 {
+		return fmt.Sprintf("No %s found matching '%s'", searchType, query)
+	}
+
+	results := []string{fmt.Sprintf("Found %d %s matching '%s':\n", len(hits), searchType, query)}
+	for _, hit := range hits {
+		src := hit.Source
+		switch searchType {
+		case "packages":
+			name := srcStr(src, "package_pname")
+			attr := srcStr(src, "package_attr_name")
+			version := srcStr(src, "package_pversion")
+			desc := srcStr(src, "package_description")
+			display := name
+			if attr != "" && attr != name {
+				display = attr
+			}
+			results = append(results, fmt.Sprintf("* %s (%s)", display, version))
+			if desc != "" {
+				results = append(results, "  "+desc)
+			}
+			results = append(results, "")
+		default:
+			pkgName := srcStr(src, "package_pname")
+			ql := strings.ToLower(query)
+			for _, prog := range srcStrList(src, "package_programs") {
+				if strings.ToLower(prog) == ql {
+					results = append(results, fmt.Sprintf("* %s (provided by %s)", prog, pkgName))
+					results = append(results, "")
+				}
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Join(results, "\n"))
+}
+
+func searchHomeManagerOptions(ctx context.Context, query string, limit int, channel string) string {
+	return searchOptions(ctx, query, "Home Manager options", homeManagerOptionType, limit, channel)
+}
+
+func searchOptions(ctx context.Context, query, label, optionType string, limit int, channel string) string {
+	channels := getChannels(ctx)
+	index, ok := channels[channel]
+	if !ok {
+		return errMsg(fmt.Sprintf("Invalid channel '%s'. %s", channel, channelSuggestions(ctx, channel)))
+	}
+	hits, err := esQuery(ctx, index, optionSearchQuery(query, optionType), limit)
+	if err != nil {
+		return errMsg(err.Error())
+	}
+	if len(hits) == 0 {
+		return fmt.Sprintf("No %s found matching '%s'", label, query)
+	}
+
+	results := []string{fmt.Sprintf("Found %d %s matching '%s':\n", len(hits), label, query)}
+	for _, hit := range hits {
+		src := hit.Source
+		name := srcStr(src, "option_name")
+		optType := srcStr(src, "option_type")
+		desc := cleanOptionDesc(srcStr(src, "option_description"))
+		results = append(results, "* "+name)
+		if optType != "" {
+			results = append(results, "  Type: "+optType)
+		}
+		if desc != "" {
+			results = append(results, "  "+desc)
+		}
+		results = append(results, "")
+	}
+	return strings.TrimSpace(strings.Join(results, "\n"))
+}
+
+func optionSearchQuery(query, optionType string) map[string]any {
+	return map[string]any{"bool": map[string]any{
+		"must": []any{map[string]any{"term": map[string]any{"type": optionType}}},
+		"should": []any{
+			map[string]any{"wildcard": map[string]any{"option_name": "*" + query + "*"}},
+			map[string]any{"match": map[string]any{"option_description": query}},
+		},
+		"minimum_should_match": 1,
+	}}
+}
+
+func infoNixOS(ctx context.Context, name, infoType, channel string) string {
+	channels := getChannels(ctx)
+	index, ok := channels[channel]
+	if !ok {
+		return errMsg(fmt.Sprintf("Invalid channel '%s'. %s", channel, channelSuggestions(ctx, channel)))
+	}
+	if infoType == "package" {
+		return infoNixOSPackage(ctx, index, name, channel)
+	}
+	return infoNixOSOption(ctx, index, name)
+}
+
+func infoNixOSPackage(ctx context.Context, index, name, channel string) string {
+	attrQuery := map[string]any{"bool": map[string]any{"must": []any{
+		map[string]any{"term": map[string]any{"type": "package"}},
+		map[string]any{"term": map[string]any{"package_attr_name": name}},
+	}}}
+	hits, err := esQuery(ctx, index, attrQuery, 1)
+	if err != nil {
+		return errMsg(err.Error())
+	}
+
+	matchedVia := "attribute"
+	var pnameCandidates []esHit
+	if len(hits) == 0 {
+		pnameQuery := map[string]any{"bool": map[string]any{"must": []any{
+			map[string]any{"term": map[string]any{"type": "package"}},
+			map[string]any{"term": map[string]any{"package_pname": name}},
+		}}}
+		pnameCandidates, err = esQuery(ctx, index, pnameQuery, 5)
+		if err != nil {
+			return errMsg(err.Error())
+		}
+		if len(pnameCandidates) == 0 {
+			return errCode("NOT_FOUND", fmt.Sprintf("Package '%s' not found", name))
+		}
+		hits = []esHit{selectPackageHit(pnameCandidates)}
+		matchedVia = "pname"
+	}
+
+	src := hits[0].Source
+	attr := srcStr(src, "package_attr_name")
+	pname := srcStr(src, "package_pname")
+	info := []string{"Package: " + pname}
+	if attr != "" && attr != pname {
+		info = append(info, "Attribute: "+attr)
+	}
+	info = append(info, "Version: "+srcStr(src, "package_pversion"))
+	if desc := srcStr(src, "package_description"); desc != "" {
+		info = append(info, "Description: "+desc)
+	}
+	if hp := srcStrList(src, "package_homepage"); len(hp) > 0 {
+		info = append(info, "Homepage: "+hp[0])
+	} else if hp := srcStr(src, "package_homepage"); hp != "" {
+		info = append(info, "Homepage: "+hp)
+	}
+	if lic := srcStrList(src, "package_license_set"); len(lic) > 0 {
+		info = append(info, "License: "+strings.Join(lic, ", "))
+	}
+	if matchedVia == "pname" && len(pnameCandidates) > 1 {
+		if note := pnameDisambiguation(name, channel, attr, pname, pnameCandidates); note != "" {
+			info = append(info, "", note)
+		}
+	}
+	return strings.Join(info, "\n")
+}
+
+func selectPackageHit(candidates []esHit) esHit {
+	for _, h := range candidates {
+		if srcStr(h.Source, "package_attr_name") == srcStr(h.Source, "package_pname") {
+			return h
+		}
+	}
+	sorted := append([]esHit(nil), candidates...)
+	sort.Slice(sorted, func(i, j int) bool {
+		ai, aj := srcStr(sorted[i].Source, "package_attr_name"), srcStr(sorted[j].Source, "package_attr_name")
+		if ai != aj {
+			return ai < aj
+		}
+		return srcStr(sorted[i].Source, "package_pname") < srcStr(sorted[j].Source, "package_pname")
+	})
+	return sorted[0]
+}
+
+func pnameDisambiguation(name, channel, attr, pname string, candidates []esHit) string {
+	altSet := map[string]bool{}
+	for _, h := range candidates {
+		if a := srcStr(h.Source, "package_attr_name"); a != "" {
+			altSet[a] = true
+		}
+	}
+	chosenAttr := attr
+	if chosenAttr == "" {
+		chosenAttr = pname
+	}
+	var others []string
+	for a := range altSet {
+		if a != chosenAttr {
+			others = append(others, a)
+		}
+	}
+	sort.Strings(others)
+	if len(others) == 0 {
+		return ""
+	}
+	pickedCanonical := false
+	for _, h := range candidates {
+		if srcStr(h.Source, "package_attr_name") == srcStr(h.Source, "package_pname") &&
+			srcStr(h.Source, "package_pname") == name {
+			pickedCanonical = true
+			break
+		}
+	}
+	chosenLabel := "a representative entry"
+	if pickedCanonical {
+		chosenLabel = "the canonical entry"
+	}
+	retry := fmt.Sprintf(`{"action": "info", "query": %q, "channel": %q}`, others[0], channel)
+	return fmt.Sprintf(
+		"Note: '%s' is a pname shared by multiple packages. Returned %s (%s). "+
+			"Other attributes with the same pname: %s. Pass an exact attribute to disambiguate, e.g. %s.",
+		name, chosenLabel, chosenAttr, strings.Join(others, ", "), retry)
+}
+
+func infoNixOSOption(ctx context.Context, index, name string) string {
+	return infoOption(ctx, index, name, nixosOptionType)
+}
+
+func infoHomeManagerOption(ctx context.Context, name, channel string) string {
+	channels := getChannels(ctx)
+	index, ok := channels[channel]
+	if !ok {
+		return errMsg(fmt.Sprintf("Invalid channel '%s'. %s", channel, channelSuggestions(ctx, channel)))
+	}
+	return infoOption(ctx, index, name, homeManagerOptionType)
+}
+
+func infoOption(ctx context.Context, index, name, optionType string) string {
+	query := map[string]any{"bool": map[string]any{"must": []any{
+		map[string]any{"term": map[string]any{"type": optionType}},
+		map[string]any{"term": map[string]any{"option_name": name}},
+	}}}
+	hits, err := esQuery(ctx, index, query, 1)
+	if err != nil {
+		return errMsg(err.Error())
+	}
+	if len(hits) == 0 {
+		return errCode("NOT_FOUND", fmt.Sprintf("Option '%s' not found", name))
+	}
+	src := hits[0].Source
+	info := []string{"Option: " + srcStr(src, "option_name")}
+	if optType := srcStr(src, "option_type"); optType != "" {
+		info = append(info, "Type: "+optType)
+	}
+	if desc := cleanOptionDesc(srcStr(src, "option_description")); desc != "" {
+		info = append(info, "Description: "+desc)
+	}
+	if def := srcStr(src, "option_default"); def != "" {
+		info = append(info, "Default: "+def)
+	}
+	if ex := srcStr(src, "option_example"); ex != "" {
+		info = append(info, "Example: "+ex)
+	}
+	return strings.Join(info, "\n")
+}
+
+func statsHomeManagerOptions(ctx context.Context, channel string) string {
+	channels := getChannels(ctx)
+	index, ok := channels[channel]
+	if !ok {
+		return errMsg(fmt.Sprintf("Invalid channel '%s'. %s", channel, channelSuggestions(ctx, channel)))
+	}
+	optCount, err := esCount(ctx, index, map[string]any{"term": map[string]any{"type": homeManagerOptionType}})
+	if err != nil || optCount == 0 {
+		return errMsg("Failed to retrieve Home Manager statistics")
+	}
+	return fmt.Sprintf("Home Manager Statistics (%s):\n* Options: %s", channel, comma(optCount))
+}
+
+func statsNixOS(ctx context.Context, channel string) string {
+	channels := getChannels(ctx)
+	index, ok := channels[channel]
+	if !ok {
+		return errMsg(fmt.Sprintf("Invalid channel '%s'. %s", channel, channelSuggestions(ctx, channel)))
+	}
+
+	var pkgCount, optCount int64
+	var wg sync.WaitGroup
+	safeGo(&wg, func() { pkgCount, _ = esCount(ctx, index, map[string]any{"term": map[string]any{"type": "package"}}) })
+	safeGo(&wg, func() {
+		optCount, _ = esCount(ctx, index, map[string]any{"term": map[string]any{"type": nixosOptionType}})
+	})
+	wg.Wait()
+	if pkgCount == 0 && optCount == 0 {
+		return errMsg("Failed to retrieve statistics")
+	}
+	return fmt.Sprintf("NixOS Statistics (%s):\n* Packages: %s\n* Options: %s", channel, comma(pkgCount), comma(optCount))
+}

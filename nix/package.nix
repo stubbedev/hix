@@ -5,7 +5,7 @@
     pkgs,
     ...
   }: {
-    packages.default = (pkgs.buildGoModule.override {go = inputs'.devtools.packages.go;}) {
+    packages.default = (pkgs.buildGoModule.override {go = inputs'.devtools.packages.go;}) (finalAttrs: {
       pname = "phix";
       version = "0-unstable-${self.lastModifiedDate or "0"}";
 
@@ -20,13 +20,14 @@
         );
       };
 
-      vendorHash = "sha256-3aKtF+kUeeFpbCaeK4fBXq2fH1mg2C3qsNzedS5ldJU=";
+      vendorHash = "sha256-tNBKsLstKy+0ZLR/+IHq02Wjx0PCyWfU8r6A2bLjzRk=";
 
       env.CGO_ENABLED = 0;
 
       ldflags = [
         "-s"
         "-w"
+        "-X github.com/stubbedev/phix/internal/nixmcp.version=${finalAttrs.version}"
       ];
 
       nativeBuildInputs = [
@@ -68,6 +69,6 @@
         mainProgram = "phix";
         platforms = lib.platforms.linux;
       };
-    };
+    });
   };
 }
