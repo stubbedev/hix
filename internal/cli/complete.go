@@ -6,9 +6,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stubbedev/hix/internal/config"
-	"github.com/stubbedev/hix/internal/proc"
-	"github.com/stubbedev/hix/internal/rebuild"
+	"github.com/stubbedev/phix/internal/config"
+	"github.com/stubbedev/phix/internal/proc"
+	"github.com/stubbedev/phix/internal/rebuild"
 )
 
 func (a *App) completeSecretNames(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {

@@ -1,21 +1,21 @@
-# hix
+# phix
 
 Build, activate and maintain a NixOS or nix-on-droid flake configuration from
 its checkout. Evaluation and builds run as you with `nix build` under a live
 build tree; only activation runs as root.
 
 ```sh
-hix switch        # build, show the closure diff, activate
-hix switch --ask  # ... and confirm after the diff, before activating
-hix upgrade       # update flake inputs, commit and push flake.lock, switch
-hix diff [a] [b]  # package diff between generations (default: previous vs current)
-hix generations   # running and boot generations, versions, closure sizes
-hix secret        # edit, set or rotate a sops secret under secrets/
-hix trust         # add an age recipient to .sops.yaml and re-wrap secrets/*
-hix help          # every verb
+phix switch        # build, show the closure diff, activate
+phix switch --ask  # ... and confirm after the diff, before activating
+phix upgrade       # update flake inputs, commit and push flake.lock, switch
+phix diff [a] [b]  # package diff between generations (default: previous vs current)
+phix generations   # running and boot generations, versions, closure sizes
+phix secret        # edit, set or rotate a sops secret under secrets/
+phix trust         # add an age recipient to .sops.yaml and re-wrap secrets/*
+phix help          # every verb
 ```
 
-Build times are remembered in `~/.cache/hix/build-times.json` and shown as
+Build times are remembered in `~/.cache/phix/build-times.json` and shown as
 estimates next to running builds. `--diff never|always` skips the closure diff
 or makes a failing one fatal (by default it only warns). Activation and hook
 output is condensed to warnings, errors, unit changes and the bootloader
@@ -27,9 +27,9 @@ The flake exports `homeManagerModules.default`:
 
 ```nix
 {
-  imports = [ inputs.hix.homeManagerModules.default ];
+  imports = [ inputs.phix.homeManagerModules.default ];
 
-  programs.hix = {
+  programs.phix = {
     enable = true;
     flake = "/etc/nixos/dotfiles";
     platform = "nixos"; # or "android" for nix-on-droid
@@ -52,15 +52,15 @@ The flake exports `homeManagerModules.default`:
 }
 ```
 
-It renders `~/.config/hix/config.yaml`, which hix decodes strictly.
-`commands` become `hix <name> [args]`, listed in help and completion.
+It renders `~/.config/phix/config.yaml`, which phix decodes strictly.
+`commands` become `phix <name> [args]`, listed in help and completion.
 `postSwitch` hooks run after a successful `switch` or `upgrade` with the
-activated generation as their last argument and `HIX_FLAKE` set;
+activated generation as their last argument and `PHIX_FLAKE` set;
 `secretEnv` variables are decrypted from sops secrets under the flake's
 `secrets/`, and a hook whose secret does not exist yet is skipped with a
 warning.
 
-`HIX_CONFIG`, `HIX_FLAKE_DIR` and `HIX_NIXOS_CONFIG` override the config file,
+`PHIX_CONFIG`, `PHIX_FLAKE_DIR` and `PHIX_NIXOS_CONFIG` override the config file,
 the flake directory and the attribute; `--attr` overrides both.
 
 ## Development

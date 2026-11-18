@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/phix/internal/ui"
 )
 
 var (

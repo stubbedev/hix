@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/stubbedev/hix/internal/atomicfile"
-	"github.com/stubbedev/hix/internal/config"
+	"github.com/stubbedev/phix/internal/atomicfile"
+	"github.com/stubbedev/phix/internal/config"
 )
 
 const (

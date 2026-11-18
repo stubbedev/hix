@@ -1,4 +1,4 @@
-module github.com/stubbedev/hix
+module github.com/stubbedev/phix
 
 go 1.27.1
 

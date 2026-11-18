@@ -6,7 +6,7 @@
     ...
   }: {
     packages.default = (pkgs.buildGoModule.override {go = inputs'.devtools.packages.go;}) {
-      pname = "hix";
+      pname = "phix";
       version = "0-unstable-${self.lastModifiedDate or "0"}";
 
       src = lib.fileset.toSource {
@@ -54,11 +54,11 @@
       '';
 
       postInstall = ''
-        installShellCompletion --cmd hix \
-          --zsh <($out/bin/hix completion zsh) \
-          --bash <($out/bin/hix completion bash) \
-          --fish <($out/bin/hix completion fish)
-        wrapProgram $out/bin/hix --prefix PATH : ${lib.makeBinPath [
+        installShellCompletion --cmd phix \
+          --zsh <($out/bin/phix completion zsh) \
+          --bash <($out/bin/phix completion bash) \
+          --fish <($out/bin/phix completion fish)
+        wrapProgram $out/bin/phix --prefix PATH : ${lib.makeBinPath [
           pkgs.age
           pkgs.sops
           pkgs.ssh-to-age
@@ -67,9 +67,9 @@
 
       meta = {
         description = "Build, activate and maintain a NixOS or nix-on-droid flake configuration";
-        homepage = "https://github.com/stubbedev/hix";
+        homepage = "https://github.com/stubbedev/phix";
         license = lib.licenses.mit;
-        mainProgram = "hix";
+        mainProgram = "phix";
         platforms = lib.platforms.linux;
       };
     };

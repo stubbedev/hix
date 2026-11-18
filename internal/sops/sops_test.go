@@ -8,7 +8,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/stubbedev/hix/internal/usage"
+	"github.com/stubbedev/phix/internal/usage"
 )
 
 const (

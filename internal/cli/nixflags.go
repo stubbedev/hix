@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/stubbedev/hix/internal/usage"
+	"github.com/stubbedev/phix/internal/usage"
 )
 
 type nixFlags struct {

@@ -5,7 +5,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/stubbedev/hix/internal/storepath"
+	"github.com/stubbedev/phix/internal/storepath"
 )
 
 const minHiddenSizeDelta = 1 << 20

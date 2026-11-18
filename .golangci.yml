@@ -68,6 +68,6 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/stubbedev/hix)
+        - prefix(github.com/stubbedev/phix)
   exclusions:
     generated: lax

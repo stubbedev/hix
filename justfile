@@ -1,4 +1,4 @@
-# hix dev tasks.
+# phix dev tasks.
 
 # List all recipes with their descriptions.
 default:

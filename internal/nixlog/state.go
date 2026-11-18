@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stubbedev/hix/internal/storepath"
-	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/phix/internal/storepath"
+	"github.com/stubbedev/phix/internal/ui"
 )
 
 type Progress struct {

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/phix/internal/ui"
 )
 
 const (

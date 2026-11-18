@@ -5,7 +5,7 @@
     pkgs,
     ...
   }: let
-    cfg = config.programs.hix;
+    cfg = config.programs.phix;
 
     choiceOptions = {
       name = lib.mkOption {
@@ -24,7 +24,7 @@
         // {
           exec = lib.mkOption {
             type = lib.types.str;
-            description = "Absolute path of the program `hix <name> [args]` runs with the arguments.";
+            description = "Absolute path of the program `phix <name> [args]` runs with the arguments.";
           };
           complete = lib.mkOption {
             type = lib.types.listOf (lib.types.submodule {options = choiceOptions;});
@@ -38,7 +38,7 @@
       options = {
         description = lib.mkOption {
           type = lib.types.str;
-          description = "What the hook does, shown as its step in `hix switch`.";
+          description = "What the hook does, shown as its step in `phix switch`.";
         };
         exec = lib.mkOption {
           type = lib.types.str;
@@ -47,7 +47,7 @@
         args = lib.mkOption {
           type = lib.types.listOf lib.types.str;
           default = [];
-          description = "Arguments before the activated generation, which hix always appends last.";
+          description = "Arguments before the activated generation, which phix always appends last.";
         };
         env = lib.mkOption {
           type = lib.types.attrsOf lib.types.str;
@@ -59,26 +59,26 @@
           default = {};
           description = ''
             Environment variables decrypted from sops secrets under the
-            flake's secrets/ directory, by secret name. hix skips the hook
+            flake's secrets/ directory, by secret name. phix skips the hook
             with a warning while one of them does not exist.
           '';
         };
       };
     };
   in {
-    options.programs.hix = {
-      enable = lib.mkEnableOption "hix, the flake configuration front-end";
+    options.programs.phix = {
+      enable = lib.mkEnableOption "phix, the flake configuration front-end";
 
       package = lib.mkOption {
         type = lib.types.package;
         default = withSystem pkgs.stdenv.hostPlatform.system ({config, ...}: config.packages.default);
-        defaultText = lib.literalExpression "hix.packages.\${system}.default";
-        description = "The hix package.";
+        defaultText = lib.literalExpression "phix.packages.\${system}.default";
+        description = "The phix package.";
       };
 
       flake = lib.mkOption {
         type = lib.types.str;
-        description = "Directory of the flake checkout hix builds from.";
+        description = "Directory of the flake checkout phix builds from.";
       };
 
       platform = lib.mkOption {
@@ -105,8 +105,8 @@
         type = lib.types.listOf commandType;
         default = [];
         description = ''
-          Extra subcommands: `hix <name> [args]` runs `exec` with the
-          arguments, and `hix help` and the completion list them.
+          Extra subcommands: `phix <name> [args]` runs `exec` with the
+          arguments, and `phix help` and the completion list them.
         '';
       };
 
@@ -114,16 +114,16 @@
         type = lib.types.listOf hookType;
         default = [];
         description = ''
-          Hooks `hix switch` and `hix upgrade` run after a successful
+          Hooks `phix switch` and `phix upgrade` run after a successful
           activation, with the activated generation as the last argument
-          and HIX_FLAKE set to the flake directory.
+          and PHIX_FLAKE set to the flake directory.
         '';
       };
     };
 
     config = lib.mkIf cfg.enable {
       home.packages = [cfg.package];
-      xdg.configFile."hix/config.yaml".source = (pkgs.formats.yaml {}).generate "hix-config.yaml" {
+      xdg.configFile."phix/config.yaml".source = (pkgs.formats.yaml {}).generate "phix-config.yaml" {
         inherit (cfg) flake platform attr commands;
         ssh_key = cfg.sshKey;
         hooks.post_switch =

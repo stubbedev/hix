@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stubbedev/hix/internal/config"
-	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/phix/internal/config"
+	"github.com/stubbedev/phix/internal/ui"
 )
 
 func TestVerbNames(t *testing.T) {
@@ -293,7 +293,7 @@ func TestConfirm(t *testing.T) {
 }
 
 func TestBuildTimes(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "hix", buildTimesFile)
+	path := filepath.Join(t.TempDir(), "phix", buildTimesFile)
 	if got, err := loadBuildTimes(path); err != nil || len(got) != 0 {
 		t.Fatalf("missing cache = %v, %v", got, err)
 	}

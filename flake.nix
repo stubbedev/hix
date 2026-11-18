@@ -1,5 +1,5 @@
 {
-  description = "hix - build, activate and maintain a NixOS or nix-on-droid flake configuration";
+  description = "phix - build, activate and maintain a NixOS or nix-on-droid flake configuration";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

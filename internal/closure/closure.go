@@ -11,9 +11,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/stubbedev/hix/internal/proc"
-	"github.com/stubbedev/hix/internal/storepath"
-	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/phix/internal/proc"
+	"github.com/stubbedev/phix/internal/storepath"
+	"github.com/stubbedev/phix/internal/ui"
 )
 
 const systemPathSuffix = "-system-path"

@@ -15,12 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stubbedev/hix/internal/closure"
-	"github.com/stubbedev/hix/internal/config"
-	"github.com/stubbedev/hix/internal/elevate"
-	"github.com/stubbedev/hix/internal/nixlog"
-	"github.com/stubbedev/hix/internal/proc"
-	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/phix/internal/closure"
+	"github.com/stubbedev/phix/internal/config"
+	"github.com/stubbedev/phix/internal/elevate"
+	"github.com/stubbedev/phix/internal/nixlog"
+	"github.com/stubbedev/phix/internal/proc"
+	"github.com/stubbedev/phix/internal/ui"
 )
 
 const (

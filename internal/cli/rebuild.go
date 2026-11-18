@@ -11,15 +11,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stubbedev/hix/internal/closure"
-	"github.com/stubbedev/hix/internal/config"
-	"github.com/stubbedev/hix/internal/elevate"
-	"github.com/stubbedev/hix/internal/flake"
-	"github.com/stubbedev/hix/internal/proc"
-	"github.com/stubbedev/hix/internal/rebuild"
-	"github.com/stubbedev/hix/internal/sops"
-	"github.com/stubbedev/hix/internal/ui"
-	"github.com/stubbedev/hix/internal/usage"
+	"github.com/stubbedev/phix/internal/closure"
+	"github.com/stubbedev/phix/internal/config"
+	"github.com/stubbedev/phix/internal/elevate"
+	"github.com/stubbedev/phix/internal/flake"
+	"github.com/stubbedev/phix/internal/proc"
+	"github.com/stubbedev/phix/internal/rebuild"
+	"github.com/stubbedev/phix/internal/sops"
+	"github.com/stubbedev/phix/internal/ui"
+	"github.com/stubbedev/phix/internal/usage"
 )
 
 func verbSummary(v rebuild.Verb) string {
@@ -166,7 +166,7 @@ func (a *App) rebuildAndHook(ctx context.Context, rt rebuild.Runtime, v rebuild.
 func (a *App) runHook(ctx context.Context, rt rebuild.Runtime, hook config.Hook, generation string, verbose bool) error {
 	log := rt.Console.Log()
 	log.StepWith(log.Style.Icons().Hook, "%s", hook.Description)
-	env := []string{"HIX_FLAKE=" + rt.Config.Flake}
+	env := []string{"PHIX_FLAKE=" + rt.Config.Flake}
 	for _, v := range hook.Env {
 		env = append(env, v.Name+"="+v.Value)
 	}
@@ -174,7 +174,7 @@ func (a *App) runHook(ctx context.Context, rt rebuild.Runtime, hook config.Hook,
 	for _, v := range hook.SecretEnv {
 		value, err := store.Decrypt(ctx, v.Value)
 		if missing, ok := errors.AsType[*sops.MissingSecretError](err); ok {
-			log.Warn("skipped: %v, run %s", missing, log.Style.Paint("hix secret set "+missing.Name, ui.Cyan))
+			log.Warn("skipped: %v, run %s", missing, log.Style.Paint("phix secret set "+missing.Name, ui.Cyan))
 			return nil
 		}
 		if err != nil {
@@ -275,9 +275,9 @@ func (a *App) diffCmd() *cobra.Command {
 		Short: "Show the package changes between two generations or store paths",
 		Long: `Show the package changes between two generations or store paths.
 
-  hix diff               the previous generation against the current one
-  hix diff <old>         <old> against the current generation
-  hix diff <old> <new>   <old> against <new>
+  phix diff               the previous generation against the current one
+  phix diff <old>         <old> against the current generation
+  phix diff <old> <new>   <old> against <new>
 
 A number names a generation of this machine's profile; anything else is
 taken as a store path or a link to one, such as ./result.`,

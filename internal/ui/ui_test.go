@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/phix/internal/proc"
 )
 
 func TestPaint(t *testing.T) {

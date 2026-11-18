@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/phix/internal/ui"
 )
 
 var epoch = time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
