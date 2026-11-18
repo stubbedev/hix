@@ -16,7 +16,10 @@ hix help          # every verb
 ```
 
 Build times are remembered in `~/.cache/hix/build-times.json` and shown as
-estimates next to running builds.
+estimates next to running builds. `--diff never|always` skips the closure diff
+or makes a failing one fatal (by default it only warns). Activation and hook
+output is condensed to warnings, errors, unit changes and the bootloader
+status; the rest is printed only if the step fails, or always with `-v`.
 
 ## Home Manager
 
