@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/stubbedev/phix/internal/proc"
@@ -157,5 +158,19 @@ func TestNerdIconsAreComplete(t *testing.T) {
 		if v.Field(i).String() == "" {
 			t.Errorf("Nerd.%s is empty", v.Type().Field(i).Name)
 		}
+	}
+}
+
+func TestGutterKeepsIndentationOfHiddenLines(t *testing.T) {
+	var out bytes.Buffer
+	g := Printer{W: &out}.Gutter(Notable)
+	if _, err := g.Write([]byte("error: build failed\n       at /flake/x.nix:3:5\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := g.ShowHidden(); err != nil {
+		t.Fatal(err)
+	}
+	if want := "│        at /flake/x.nix:3:5\n"; !strings.Contains(out.String(), want) {
+		t.Fatalf("hidden line lost its indentation:\n%q", out.String())
 	}
 }

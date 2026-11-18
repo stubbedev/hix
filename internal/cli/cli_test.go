@@ -16,6 +16,7 @@ import (
 	"github.com/stubbedev/phix/internal/config"
 	"github.com/stubbedev/phix/internal/proc"
 	"github.com/stubbedev/phix/internal/rebuild"
+	"github.com/stubbedev/phix/internal/runlock"
 	"github.com/stubbedev/phix/internal/ui"
 	"github.com/stubbedev/phix/internal/usage"
 )
@@ -90,6 +91,7 @@ func newHarnessWith(t *testing.T, postSwitch []map[string]any, commands ...map[s
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", h.home)
+	t.Setenv("XDG_CACHE_HOME", filepath.Join(h.home, ".cache"))
 	t.Setenv("PHIX_CONFIG", cfgPath)
 	t.Setenv("PHIX_FLAKE_DIR", link)
 	t.Setenv("SOPS_AGE_KEY_FILE", "")
@@ -290,6 +292,28 @@ func TestSecretCompletion(t *testing.T) {
 	}
 }
 
+func TestMutatingCommandsAreExclusive(t *testing.T) {
+	h := newHarness(t)
+	dir, err := config.CacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := runlock.Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+	for _, args := range [][]string{{"update"}, {"switch"}, {"secret", "rotate", "token"}, {"gc"}} {
+		_, errOut, code := h.run("", args...)
+		if code == 0 || !strings.Contains(errOut, "another phix run (pid ") {
+			t.Errorf("phix %v with the lock held exited %d:\n%s", args, code, errOut)
+		}
+	}
+	if _, errOut, code := h.run("", "whoami"); strings.Contains(errOut, "another phix run") {
+		t.Errorf("read-only whoami blocked by the lock (exit %d):\n%s", code, errOut)
+	}
+}
+
 func TestTrustAndSecrets(t *testing.T) {
 	requireTools(t, "sops", "age", "age-keygen", "ssh-to-age", "ssh-keygen")
 	h := newHarness(t)
@@ -327,9 +351,15 @@ func TestTrustAndSecrets(t *testing.T) {
 
 	h.mustRun("hunter2\n\n", "secret", "set", "token")
 	t.Setenv("SOPS_AGE_KEY_FILE", firstKey)
-	out = h.mustRun("", "trust", "second", second)
-	if !strings.Contains(out, "Re-wrapping token") || !strings.Contains(out, "Trusted second across 1 secret file(s)") {
-		t.Fatalf("trust did not re-wrap token:\n%s", out)
+	out, errOut, code := h.run("", "trust", "second", second)
+	if code != 0 || !strings.Contains(out, "Re-wrapping token") || !strings.Contains(out, "Trusted second across 1 secret file(s)") {
+		t.Fatalf("trust did not re-wrap token (exit %d):\n%s\n%s", code, out, errOut)
+	}
+	if want := "│ " + ui.Unicode.Added + " " + second + "\n"; !strings.Contains(errOut, want) {
+		t.Fatalf("re-wrap does not list the added recipient %q:\n%s", want, errOut)
+	}
+	if want := "│ " + ui.Unicode.Done + " re-encrypted for the new recipients\n"; !strings.Contains(errOut, want) {
+		t.Fatalf("re-wrap does not report the re-encryption:\n%s", errOut)
 	}
 	keys, _ = h.recipients()
 	if strings.Join(keys, " ") != strings.Join(append(before, first, second), " ") {

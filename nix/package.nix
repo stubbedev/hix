@@ -58,11 +58,7 @@
           --zsh <($out/bin/phix completion zsh) \
           --bash <($out/bin/phix completion bash) \
           --fish <($out/bin/phix completion fish)
-        wrapProgram $out/bin/phix --prefix PATH : ${lib.makeBinPath [
-          pkgs.age
-          pkgs.sops
-          pkgs.ssh-to-age
-        ]}
+        wrapProgram $out/bin/phix --prefix PATH : ${lib.makeBinPath [pkgs.sops]}
       '';
 
       meta = {

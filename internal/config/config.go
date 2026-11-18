@@ -148,6 +148,14 @@ func DefaultPath(getenv func(string) string) (string, error) {
 	return filepath.Join(home, ".config", Name, configFile), nil
 }
 
+func CacheDir() (string, error) {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("locating the %s cache directory: %w", Name, err)
+	}
+	return filepath.Join(dir, Name), nil
+}
+
 func Load(path string, getenv func(string) string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -88,11 +88,11 @@ func (g *Gutter) ShowHidden() error {
 	return g.flush()
 }
 
-func (g *Gutter) line(line string) {
-	line = strings.TrimRight(line, "\r")
-	out, ok := g.format(g.st, line)
+func (g *Gutter) line(raw string) {
+	raw = Strip(strings.TrimRight(raw, "\r"))
+	out, ok := g.format(g.st, strings.TrimSpace(raw))
 	if !ok {
-		g.hidden = append(g.hidden, line)
+		g.hidden = append(g.hidden, raw)
 		return
 	}
 	if g.shown[out] {

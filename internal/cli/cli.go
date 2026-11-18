@@ -15,6 +15,7 @@ import (
 	"github.com/stubbedev/phix/internal/config"
 	"github.com/stubbedev/phix/internal/proc"
 	"github.com/stubbedev/phix/internal/rebuild"
+	"github.com/stubbedev/phix/internal/runlock"
 	"github.com/stubbedev/phix/internal/ui"
 	"github.com/stubbedev/phix/internal/usage"
 )
@@ -186,7 +187,7 @@ Environment:
 		if err != nil {
 			return nil, err
 		}
-		root.AddCommand(cmd)
+		root.AddCommand(exclusive(cmd))
 	}
 	upgrade, err := a.upgradeCmd()
 	if err != nil {
@@ -194,15 +195,15 @@ Environment:
 	}
 	root.AddCommand(
 		a.replCmd(),
-		a.rollbackCmd(),
+		exclusive(a.rollbackCmd()),
 		a.generationsCmd(),
 		a.diffCmd(),
-		a.gcCmd(),
-		a.updateCmd(),
-		upgrade,
+		exclusive(a.gcCmd()),
+		exclusive(a.updateCmd()),
+		exclusive(upgrade),
 		a.whoamiCmd(),
-		a.trustCmd(),
-		a.secretCmd(),
+		exclusive(a.trustCmd()),
+		exclusive(a.secretCmd()),
 	)
 	if a.cfgErr != nil || len(a.cfg.Commands) == 0 {
 		return root, nil
@@ -219,6 +220,28 @@ Environment:
 		root.AddCommand(a.externalCmd(c))
 	}
 	return root, nil
+}
+
+func exclusive(cmd *cobra.Command) *cobra.Command {
+	for _, sub := range cmd.Commands() {
+		exclusive(sub)
+	}
+	run := cmd.RunE
+	if run == nil {
+		return cmd
+	}
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		dir, err := config.CacheDir()
+		if err != nil {
+			return err
+		}
+		lock, err := runlock.Acquire(dir)
+		if err != nil {
+			return err
+		}
+		return errors.Join(run(cmd, args), lock.Release())
+	}
+	return cmd
 }
 
 func (a *App) rejectUnknown(_ *cobra.Command, args []string) error {

@@ -2,6 +2,7 @@ package flake
 
 import (
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -117,14 +118,26 @@ func TestUpdateFormatHidesLockChatter(t *testing.T) {
 		`    'github:stubbedev/lys/a3ba1e5?narHash=sha256-Y6%3D' (2026-11-18)`,
 		`  → 'github:stubbedev/lys/5d3b1f7?narHash=sha256-ve%3D' (2026-11-18)`,
 		`• Added input 'phix/nixpkgs':`,
+		"\x1b[32;1m• Added input 'phix':\x1b[0m",
 		`    follows 'nixpkgs'`,
+		`    'github:stubbedev/failed-thing/abc?narHash=sha256-x' (2026-11-18)`,
 	} {
-		if out, ok := updateFormat(ui.Style{}, line); ok {
+		if out := throughGutter(t, line); out != "" {
 			t.Errorf("lock chatter %q shown as %q", line, out)
 		}
 	}
-	out, ok := updateFormat(ui.Style{}, "warning: Git tree '/etc/nixos/dotfiles' is dirty")
-	if want := ui.Unicode.Warn + " Git tree '/etc/nixos/dotfiles' is dirty"; !ok || out != want {
-		t.Fatalf("warning shown as %q, %v; want %q", out, ok, want)
+	out := throughGutter(t, "warning: Git tree '/etc/nixos/dotfiles' is dirty")
+	if want := "│ " + ui.Unicode.Warn + " Git tree '/etc/nixos/dotfiles' is dirty\n"; out != want {
+		t.Fatalf("warning shown as %q; want %q", out, want)
 	}
+}
+
+func throughGutter(t *testing.T, line string) string {
+	t.Helper()
+	var out strings.Builder
+	g := ui.Printer{W: &out}.Gutter(updateFormat)
+	if _, err := g.Write([]byte(line + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	return out.String()
 }

@@ -180,7 +180,7 @@ func dateChange(old, new time.Time) string {
 var lockChatter = []*regexp.Regexp{
 	regexp.MustCompile(`^warning: (updating|creating) lock file `),
 	regexp.MustCompile(`^• (Updated|Added|Removed) input '`),
-	regexp.MustCompile(`^\s+('|→ '|follows ')`),
+	regexp.MustCompile(`^('|→ '|follows ')`),
 }
 
 func updateFormat(st ui.Style, line string) (string, bool) {

@@ -48,7 +48,7 @@ func (a *App) whoamiCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pubkey, err := sops.AgePubkey(cmd.Context(), a.console.Streams, cfg.SSHPublicKey())
+			pubkey, err := sops.AgePubkey(cfg.SSHPublicKey())
 			if err != nil {
 				return err
 			}
@@ -79,7 +79,7 @@ func (a *App) trustCmd() *cobra.Command {
 				return err
 			}
 			if req.Name == "" {
-				if req.Name, err = a.autoName(cmd, cfg, req.Pubkey); err != nil {
+				if req.Name, err = a.autoName(cfg, req.Pubkey); err != nil {
 					return err
 				}
 			}
@@ -88,14 +88,14 @@ func (a *App) trustCmd() *cobra.Command {
 	}
 }
 
-func (a *App) autoName(cmd *cobra.Command, cfg config.Config, pubkey string) (string, error) {
+func (a *App) autoName(cfg config.Config, pubkey string) (string, error) {
 	host, err := shortHostname()
 	if err != nil {
 		return "", err
 	}
 	local := ""
 	if _, err := os.Stat(cfg.SSHPublicKey()); err == nil {
-		if local, err = sops.AgePubkey(cmd.Context(), a.console.Streams, cfg.SSHPublicKey()); err != nil {
+		if local, err = sops.AgePubkey(cfg.SSHPublicKey()); err != nil {
 			return "", err
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {

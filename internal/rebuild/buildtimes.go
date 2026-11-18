@@ -21,11 +21,11 @@ const (
 )
 
 func buildTimesPath() (string, error) {
-	dir, err := os.UserCacheDir()
+	dir, err := config.CacheDir()
 	if err != nil {
 		return "", fmt.Errorf("locating the build time cache: %w", err)
 	}
-	return filepath.Join(dir, config.Name, buildTimesFile), nil
+	return filepath.Join(dir, buildTimesFile), nil
 }
 
 func loadBuildTimes(path string) (map[string]time.Duration, error) {

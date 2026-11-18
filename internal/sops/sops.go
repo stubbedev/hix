@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/stubbedev/phix/internal/agekey"
 	"github.com/stubbedev/phix/internal/atomicfile"
 	"github.com/stubbedev/phix/internal/proc"
 	"github.com/stubbedev/phix/internal/ui"
@@ -153,17 +154,16 @@ func ParsePipedValue(data []byte) ([]byte, error) {
 	return value, nil
 }
 
-func AgePubkey(ctx context.Context, s proc.Streams, sshPublicKey string) (string, error) {
-	f, err := os.Open(sshPublicKey)
+func AgePubkey(sshPublicKey string) (string, error) {
+	data, err := os.ReadFile(sshPublicKey)
 	if err != nil {
 		return "", fmt.Errorf("deriving an age pubkey: %w", err)
 	}
-	defer f.Close()
-	out, err := proc.OutputQuiet(ctx, proc.Cmd{Argv: []string{"ssh-to-age"}, Stdin: f})
+	recipient, err := agekey.FromSSHPublicKey(data)
 	if err != nil {
 		return "", fmt.Errorf("deriving an age pubkey from %s: %w", sshPublicKey, err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	return string(recipient), nil
 }
 
 type TrustRequest struct {
@@ -215,25 +215,12 @@ func ValidateTrustName(name string) error {
 	return nil
 }
 
-func validateRecipient(ctx context.Context, pubkey string) error {
-	cmd := proc.Cmd{
-		Argv:   []string{"age", "-r", pubkey, "-o", os.DevNull},
-		Stdin:  strings.NewReader(""),
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-	}
-	if err := proc.Run(ctx, cmd); err != nil {
-		return usage.Errorf("trust: %q is not a valid age recipient pubkey", pubkey)
-	}
-	return nil
-}
-
 func (s Store) Trust(ctx context.Context, req TrustRequest) error {
 	if err := ValidateTrustName(req.Name); err != nil {
 		return err
 	}
-	if err := validateRecipient(ctx, req.Pubkey); err != nil {
-		return err
+	if _, err := agekey.ParseRecipient(req.Pubkey); err != nil {
+		return usage.Errorf("trust: %v", err)
 	}
 	original, err := os.ReadFile(s.configPath())
 	if err != nil {

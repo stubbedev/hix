@@ -21,6 +21,18 @@ or makes a failing one fatal (by default it only warns). Activation and hook
 output is condensed to warnings, errors, unit changes and the bootloader
 status; the rest is printed only if the step fails, or always with `-v`.
 
+Commands that change the system, the flake or its secrets (every rebuild
+verb, `rollback`, `gc`, `update`, `upgrade`, `trust`, `secret`) take a lock
+in `~/.cache/phix/run.lock`; a second one fails at once, naming the pid that
+holds it.
+
+## Runtime
+
+phix drives `nix`, `git`, `sops`, `sudo` and `systemd-run`; the package puts
+`sops` on its PATH. Age recipients are derived from the SSH key and validated
+in-process, so `age` and `ssh-to-age` are only needed by the test suite, which
+checks the conversion against `ssh-to-age`.
+
 ## Home Manager
 
 The flake exports `homeManagerModules.default`:
