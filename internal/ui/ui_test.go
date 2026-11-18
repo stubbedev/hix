@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"testing"
 
 	"github.com/stubbedev/phix/internal/proc"
@@ -147,5 +148,14 @@ func TestRunIndentedShowsHiddenOutputOnFailure(t *testing.T) {
 	out.Reset()
 	if err := c.RunIndented(context.Background(), proc.Cmd{Argv: []string{"sh", "-c", "echo routine"}}, Notable); err != nil || out.String() != "" {
 		t.Fatalf("successful run printed %q, err %v", out.String(), err)
+	}
+}
+
+func TestNerdIconsAreComplete(t *testing.T) {
+	v := reflect.ValueOf(Nerd)
+	for i := range v.NumField() {
+		if v.Field(i).String() == "" {
+			t.Errorf("Nerd.%s is empty", v.Type().Field(i).Name)
+		}
 	}
 }

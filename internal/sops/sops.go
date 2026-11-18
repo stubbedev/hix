@@ -108,12 +108,9 @@ func (s Store) Decrypt(ctx context.Context, name string) ([]byte, error) {
 	} else if err != nil {
 		return nil, fmt.Errorf("decrypting secrets/%s: %w", name, err)
 	}
-	var stderr bytes.Buffer
-	cmd := s.sops(append([]string{"--decrypt"}, append(slices.Clone(binaryMode), path)...)...)
-	cmd.Stderr = &stderr
-	out, err := proc.Output(ctx, cmd)
+	out, err := proc.OutputQuiet(ctx, s.sops(append([]string{"--decrypt"}, append(slices.Clone(binaryMode), path)...)...))
 	if err != nil {
-		return nil, fmt.Errorf("decrypting secrets/%s: %w: %s", name, err, strings.TrimSpace(stderr.String()))
+		return nil, fmt.Errorf("decrypting secrets/%s: %w", name, err)
 	}
 	return bytes.TrimRight(out, "\n"), nil
 }
@@ -127,7 +124,7 @@ func (s Store) Set(ctx context.Context, path string, value []byte) error {
 	cmd.Stdin = bytes.NewReader(value)
 	return atomicfile.Replace(path, secretPerm, func(w io.Writer) error {
 		cmd.Stdout = w
-		if err := proc.Run(ctx, cmd); err != nil {
+		if err := proc.RunQuiet(ctx, cmd); err != nil {
 			return fmt.Errorf("encrypting %s: %w", path, err)
 		}
 		return nil
@@ -142,7 +139,7 @@ func (s Store) Rotate(ctx context.Context, path string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("rotating %s: not a regular file", path)
 	}
-	return proc.Run(ctx, s.sops(append([]string{"--rotate", "-i"}, append(slices.Clone(binaryMode), path)...)...))
+	return s.Console.RunIndented(ctx, s.sops(append([]string{"--rotate", "-i"}, append(slices.Clone(binaryMode), path)...)...), sopsFormat)
 }
 
 func ParsePipedValue(data []byte) ([]byte, error) {
@@ -162,7 +159,7 @@ func AgePubkey(ctx context.Context, s proc.Streams, sshPublicKey string) (string
 		return "", fmt.Errorf("deriving an age pubkey: %w", err)
 	}
 	defer f.Close()
-	out, err := proc.Output(ctx, proc.Cmd{Argv: []string{"ssh-to-age"}, Stdin: f, Stderr: s.Stderr})
+	out, err := proc.OutputQuiet(ctx, proc.Cmd{Argv: []string{"ssh-to-age"}, Stdin: f})
 	if err != nil {
 		return "", fmt.Errorf("deriving an age pubkey from %s: %w", sshPublicKey, err)
 	}
@@ -283,7 +280,7 @@ func (s Store) rewrapAll(ctx context.Context) (int, error) {
 	}
 	for _, name := range names {
 		s.Console.Out().Step("Re-wrapping %s", name)
-		if err := proc.Run(ctx, s.sops("updatekeys", "--yes", filepath.Join(s.secretsDir(), name))); err != nil {
+		if err := s.Console.RunIndented(ctx, s.sops("updatekeys", "--yes", filepath.Join(s.secretsDir(), name)), sopsFormat); err != nil {
 			return 0, fmt.Errorf("re-wrapping %s: %w", name, err)
 		}
 	}

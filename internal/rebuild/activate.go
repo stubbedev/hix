@@ -116,9 +116,9 @@ func systemdRun(ctx context.Context, s proc.Streams) ([]string, error) {
 	if !info.IsDir() {
 		return nil, nil
 	}
-	out, err := proc.Output(ctx, proc.Cmd{Argv: []string{"systemd-run", "--version"}, Stdin: s.Stdin, Stderr: s.Stderr})
+	out, err := proc.OutputQuiet(ctx, proc.Cmd{Argv: []string{"systemd-run", "--version"}, Stdin: s.Stdin})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("checking the systemd version: %w", err)
 	}
 	version, err := parseSystemdVersion(out)
 	if err != nil {

@@ -1,7 +1,6 @@
 package closure
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,12 +30,7 @@ type pathInfo struct {
 
 func pathInfoJSON(ctx context.Context, flags []string, paths ...string) ([]byte, error) {
 	argv := append([]string{"nix", "--extra-experimental-features", "nix-command", "path-info", "--json"}, flags...)
-	var stderr bytes.Buffer
-	out, err := proc.Output(ctx, proc.Cmd{Argv: append(argv, paths...), Stdin: strings.NewReader(""), Stderr: &stderr})
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
-	}
-	return out, nil
+	return proc.OutputQuiet(ctx, proc.Cmd{Argv: append(argv, paths...), Stdin: strings.NewReader("")})
 }
 
 func Load(ctx context.Context, root string) (Closure, error) {

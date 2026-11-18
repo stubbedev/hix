@@ -91,6 +91,26 @@ func Output(ctx context.Context, c Cmd) ([]byte, error) {
 	return out.Bytes(), err
 }
 
+func RunQuiet(ctx context.Context, c Cmd) error {
+	var stderr bytes.Buffer
+	c.Stderr = &stderr
+	err := Run(ctx, c)
+	if err == nil {
+		return nil
+	}
+	if msg := strings.TrimSpace(stderr.String()); msg != "" {
+		return fmt.Errorf("%w: %s", err, msg)
+	}
+	return err
+}
+
+func OutputQuiet(ctx context.Context, c Cmd) ([]byte, error) {
+	var out bytes.Buffer
+	c.Stdout = &out
+	err := RunQuiet(ctx, c)
+	return out.Bytes(), err
+}
+
 func ExitCode(err error) (int, bool) {
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {

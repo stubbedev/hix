@@ -407,6 +407,22 @@ func TestPrintedLineKeepsFullWidthCharacter(t *testing.T) {
 	}
 }
 
+func TestLiveWarningsAreFormattedOnce(t *testing.T) {
+	var out bytes.Buffer
+	r := NewRenderer(&out, Config{Width: 80, Height: 20})
+	warning := `@nix {"action":"msg","level":1,"msg":"\u001b[35;1mwarning:\u001b[0m Git tree '/etc/nixos/dotfiles' is dirty"}`
+	r.handle([]byte(warning))
+	r.handle([]byte(warning))
+	r.flush()
+	want := ui.Unicode.Warn + " Git tree '/etc/nixos/dotfiles' is dirty"
+	if got := strings.Count(out.String(), want); got != 1 {
+		t.Fatalf("formatted warning printed %d times, want once:\n%q", got, out.String())
+	}
+	if strings.Contains(out.String(), "warning:") {
+		t.Fatalf("raw warning prefix printed:\n%q", out.String())
+	}
+}
+
 func TestScreenRows(t *testing.T) {
 	if got := screenRows([]int{0, 20, 21, 45}, 20); got != 1+1+2+3 {
 		t.Fatalf("screenRows = %d", got)

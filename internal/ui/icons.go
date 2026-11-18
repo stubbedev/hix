@@ -17,6 +17,9 @@ type Icons struct {
 	Done     string
 	Planned  string
 	Failed   string
+	Added    string
+	Removed  string
+	Updated  string
 	Download string
 	Upload   string
 	Clock    string
@@ -39,6 +42,9 @@ var Unicode = Icons{
 	Done:     "✔",
 	Planned:  "⏸",
 	Failed:   "✗",
+	Added:    "+",
+	Removed:  "−",
+	Updated:  "↑",
 	Download: "↓",
 	Upload:   "↑",
 	Clock:    "⏱",
@@ -46,17 +52,22 @@ var Unicode = Icons{
 	Gap:      " ",
 }
 
-var Nerd = Icons{
-	Running:  "",
-	Done:     "",
-	Planned:  "",
-	Failed:   "",
-	Download: "",
-	Upload:   "",
-	Clock:    "",
-	Summary:  "\U000f04a0",
-	Gap:      " ",
-}
+var Nerd = func() Icons {
+	i := Unicode
+	i.Running = ""
+	i.Done = ""
+	i.Planned = ""
+	i.Failed = ""
+	i.Added = "\uf067"
+	i.Removed = "\uf068"
+	i.Updated = "\uf062"
+	i.Download = ""
+	i.Upload = ""
+	i.Clock = ""
+	i.Summary = "\U000f04a0"
+	i.Gap = " "
+	return i
+}()
 
 func DetectIcons(getenv func(string) string) *Icons {
 	switch strings.ToLower(strings.TrimSpace(getenv("NERD_FONTS"))) {

@@ -41,7 +41,7 @@ func (r Repo) runGit(ctx context.Context, timeout time.Duration, args ...string)
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	return proc.Run(ctx, r.git(args...))
+	return r.Console.RunIndented(ctx, r.git(args...), ui.Notable)
 }
 
 func Update(ctx context.Context, r Repo) error {
@@ -68,8 +68,29 @@ func Update(ctx context.Context, r Repo) error {
 }
 
 func (r Repo) updateLock(ctx context.Context) error {
-	argv := []string{"nix", "--extra-experimental-features", "nix-command flakes", "flake", "update", "--flake", r.Ref, "--quiet"}
-	return proc.Run(ctx, r.Console.Cmd(argv...))
+	path := filepath.Join(r.Dir, lockFile)
+	before, err := readPins(path)
+	if err != nil {
+		return err
+	}
+	argv := []string{"nix", "--extra-experimental-features", "nix-command flakes", "flake", "update", "--flake", r.Ref}
+	if err := r.Console.RunIndented(ctx, proc.Cmd{Argv: argv, Stdin: r.Console.Stdin}, updateFormat); err != nil {
+		return fmt.Errorf("updating the inputs of %s: %w", r.Dir, err)
+	}
+	after, err := readPins(path)
+	if err != nil {
+		return err
+	}
+	log := r.Console.Log()
+	changes := diffPins(before, after)
+	if len(changes) == 0 {
+		log.Detail(log.Style.Paint("all inputs up to date", ui.Faint))
+		return nil
+	}
+	for _, line := range renderChanges(log.Style, changes) {
+		log.Detail(line)
+	}
+	return nil
 }
 
 func (r Repo) hasUpstream(ctx context.Context) (bool, error) {

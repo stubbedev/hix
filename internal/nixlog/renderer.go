@@ -42,6 +42,7 @@ type Renderer struct {
 	widths   []int
 	frame    string
 	printed  bool
+	notices  map[string]bool
 	buf      bytes.Buffer
 	firstErr error
 }
@@ -51,9 +52,10 @@ func NewRenderer(w io.Writer, cfg Config) *Renderer {
 		cfg.Now = time.Now
 	}
 	r := &Renderer{
-		w:     w,
-		cfg:   cfg,
-		state: NewState(Options{BuildLogs: cfg.BuildLogs, Live: cfg.live(), Inputs: cfg.Inputs, Estimates: cfg.Estimates}, cfg.Now()),
+		w:       w,
+		cfg:     cfg,
+		notices: make(map[string]bool),
+		state:   NewState(Options{BuildLogs: cfg.BuildLogs, Live: cfg.live(), Inputs: cfg.Inputs, Estimates: cfg.Estimates}, cfg.Now()),
 	}
 	r.resetBuf()
 	return r
@@ -203,15 +205,28 @@ func (r *Renderer) handle(line []byte) {
 		r.firstErr = err
 	}
 	for _, l := range out {
-		r.print(r.format(l))
+		if text, ok := r.format(l); ok {
+			r.print(text)
+		}
 	}
 }
 
-func (r *Renderer) format(l Line) string {
-	if l.Prefix == "" || !r.cfg.live() {
-		return l.String()
+func (r *Renderer) format(l Line) (string, bool) {
+	if !r.cfg.live() {
+		return l.String(), true
 	}
-	return r.cfg.Style.Paint(l.Prefix+">", ui.Blue) + " " + l.Text
+	if l.Prefix != "" {
+		return r.cfg.Style.Paint(l.Prefix+">", ui.Blue) + " " + l.Text, true
+	}
+	notice, ok := ui.Notable(r.cfg.Style, ui.Strip(l.Text))
+	if !ok {
+		return l.Text, true
+	}
+	if r.notices[notice] {
+		return "", false
+	}
+	r.notices[notice] = true
+	return notice, true
 }
 
 func (r *Renderer) print(line string) {

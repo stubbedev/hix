@@ -388,7 +388,7 @@ func HostAttrs(ctx context.Context, cfg config.Config) ([]string, error) {
 	}
 	argv := append([]string{"nix"}, nixFlakeFlags...)
 	argv = append(argv, "eval", "--json", cfg.FlakeRef()+"#"+set, "--apply", "builtins.attrNames")
-	out, err := proc.Output(ctx, proc.Cmd{Argv: argv, Stdin: strings.NewReader(""), Stderr: io.Discard})
+	out, err := proc.OutputQuiet(ctx, proc.Cmd{Argv: argv, Stdin: strings.NewReader("")})
 	if err != nil {
 		return nil, fmt.Errorf("listing %s: %w", set, err)
 	}
@@ -418,5 +418,5 @@ func GC(ctx context.Context, rt Runtime, args []string) error {
 		argv = elevate.Command(argv...)
 	}
 	rt.Console.Log().Step("Collecting garbage")
-	return proc.Run(ctx, rt.Console.Cmd(argv...))
+	return rt.Console.RunIndented(ctx, proc.Cmd{Argv: argv, Stdin: rt.Console.Stdin}, gcFormat)
 }

@@ -103,8 +103,12 @@ func (g *Gutter) line(line string) {
 }
 
 func (g *Gutter) emit(text string) {
-	g.out.WriteString(g.st.Paint("│", Gray) + " " + text + "\n")
+	g.out.WriteString(gutterLine(g.st, text) + "\n")
 }
+
+func gutterLine(st Style, text string) string { return st.Paint("│", Gray) + " " + text }
+
+func (p Printer) Detail(text string) { fmt.Fprintln(p.W, gutterLine(p.Style, text)) }
 
 func (g *Gutter) flush() error {
 	if g.out.Len() == 0 {
