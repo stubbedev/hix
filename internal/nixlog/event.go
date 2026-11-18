@@ -36,6 +36,7 @@ const (
 	ResultBuildLogLine     ResultType = 101
 	ResultSetPhase         ResultType = 104
 	ResultProgress         ResultType = 105
+	ResultSetExpected      ResultType = 106
 	ResultPostBuildLogLine ResultType = 107
 )
 

@@ -50,6 +50,24 @@ func TestBytes(t *testing.T) {
 	}
 }
 
+func TestByteProgress(t *testing.T) {
+	cases := []struct {
+		done, total int64
+		want        string
+	}{
+		{0, 0, "0 / 0 B"},
+		{512, 1000, "512 / 1000 B"},
+		{512, 2048, "0.5 / 2.0 KiB"},
+		{12 << 20, 50 << 20, "12.0 / 50.0 MiB"},
+		{300 << 20, 3 << 30, "0.3 / 3.0 GiB"},
+	}
+	for _, c := range cases {
+		if got := ByteProgress(c.done, c.total); got != c.want {
+			t.Errorf("ByteProgress(%d, %d) = %q, want %q", c.done, c.total, got, c.want)
+		}
+	}
+}
+
 func TestDetect(t *testing.T) {
 	env := func(vars map[string]string) func(string) string {
 		return func(k string) string { return vars[k] }

@@ -114,10 +114,12 @@ func TestLiveFetch(t *testing.T) {
 		t.Fatalf("live output does not hide and restore the cursor:\n%q", out)
 	}
 	ic := ui.Unicode
-	if !strings.Contains(out, ic.With(ic.Done, "Finished in 0s: fetched 1")+clearLine+"\n") {
+	summary := ic.With(ic.Done, "Finished at 12:00:00 after 0s: fetched 1 (10.52 KiB from cache.nixos.org)") + clearLine + "\n"
+	frames, _, ok := strings.Cut(out, summary)
+	if !ok {
 		t.Fatalf("no final summary:\n%q", out)
 	}
-	for segment := range strings.SplitSeq(out, "\n") {
+	for segment := range strings.SplitSeq(frames, "\n") {
 		for line := range strings.FieldsFuncSeq(segment, func(r rune) bool { return r == '\x1b' }) {
 			if ui.Width(line) >= width {
 				t.Fatalf("frame line not narrower than the terminal: %q", line)
@@ -189,7 +191,7 @@ func TestLiveFrameDrawsWhileStreaming(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	summary := ic.With(ic.Done, "Finished in")
+	summary := ic.With(ic.Done, "Finished at")
 	out.waitFor(t, summary)
 	final := out.buf.String()
 	final = final[strings.LastIndex(final, syncStart):]
@@ -283,20 +285,21 @@ func TestTree(t *testing.T) {
 		"│  ├─ " + ic.Running + ic.Gap + "kernel  " + ic.With(ic.Clock, "1m5s"),
 		"│  ╰─ " + ic.Planned + ic.Gap + "etc",
 		"│     ╰─ " + ic.Running + ic.Gap + "unit  buildPhase  " + ic.With(ic.Clock, "1m5s"),
-		"┕━ " + ic.With(ic.Running, "2") + " " + ic.With(ic.Done, "0/4") + " " + ic.With(ic.Planned, "2") + " │ " + ic.With(ic.Clock, "1m5s"),
+		"┝━━━ Builds",
+		"┕━ " + ic.Summary + ic.Gap + ic.With(ic.Running, "2") + " " + ic.With(ic.Done, "0") + " " + ic.With(ic.Planned, "2") + " │ " + ic.With(ic.Clock, "1m5s"),
 	}
 	got := r.state.Frame(View{Width: 200, Height: 40}, r.now)
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("frame:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 
-	flat := r.state.Frame(View{Width: 200, Height: 4}, r.now)
-	if len(flat) != 3 || !strings.HasPrefix(flat[0], "├─ "+ic.Running) || !strings.Contains(flat[0], "kernel") || !strings.Contains(flat[1], "unit") {
-		t.Fatalf("frame does not flatten into 4 rows:\n%s", strings.Join(flat, "\n"))
+	flat := r.state.Frame(View{Width: 200, Height: 5}, r.now)
+	if len(flat) != 4 || !strings.HasPrefix(flat[0], "├─ "+ic.Running) || !strings.Contains(flat[0], "kernel") || !strings.Contains(flat[1], "unit") {
+		t.Fatalf("frame does not flatten into 5 rows:\n%s", strings.Join(flat, "\n"))
 	}
-	cut := r.state.Frame(View{Width: 200, Height: 3}, r.now)
-	if len(cut) != 2 || cut[0] != "├─ … and 2 more" {
-		t.Fatalf("frame does not cut down to 3 rows:\n%s", strings.Join(cut, "\n"))
+	cut := r.state.Frame(View{Width: 200, Height: 4}, r.now)
+	if len(cut) != 3 || cut[0] != "├─ … and 2 more" {
+		t.Fatalf("frame does not cut down to 4 rows:\n%s", strings.Join(cut, "\n"))
 	}
 
 	r.apply(
@@ -329,7 +332,7 @@ func TestWaitingChainsCollapse(t *testing.T) {
 		"│     ╰─ " + ic.Running + ic.Gap + "leaf  " + ic.With(ic.Clock, "0s"),
 	}
 	got := r.state.Frame(View{Width: 200, Height: 40}, r.now)
-	if strings.Join(got[:len(got)-1], "\n") != strings.Join(want, "\n") {
+	if len(got) < len(want) || strings.Join(got[:len(want)], "\n") != strings.Join(want, "\n") {
 		t.Fatalf("frame:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
@@ -358,10 +361,13 @@ func TestResizeRewindsReflowedFrame(t *testing.T) {
 	r := NewRenderer(&out, Config{Width: 80, Height: 20, Now: fixedClock(&now)})
 	r.handle([]byte(`@nix {"action":"start","id":1,"level":3,"type":105,"text":"","fields":["` + drvPath(strings.Repeat("long-name-", 5)) + `","",1,1]}`))
 	r.redraw()
-	if len(r.widths) != 2 || r.widths[0] <= 40 {
+	if len(r.widths) != 3 || r.widths[0] <= 40 {
 		t.Fatalf("frame widths = %v", r.widths)
 	}
-	rows := (r.widths[0]+19)/20 + (r.widths[1]+19)/20
+	rows := 0
+	for _, w := range r.widths {
+		rows += (w + 19) / 20
+	}
 	r.flush()
 	out.Reset()
 	r.resize(ui.Size{Width: 20, Height: 20})
@@ -389,7 +395,7 @@ func TestRedrawOverwritesInPlace(t *testing.T) {
 	r.redraw()
 	r.flush()
 	lines := r.state.Frame(r.cfg.view(), now)
-	want := syncStart + "\r\x1b[1A" + lines[0] + clearLine + "\n" + lines[1] + clearLine + clearToEnd + syncEnd
+	want := syncStart + "\r\x1b[" + strconv.Itoa(len(lines)-1) + "A" + strings.Join(lines, clearLine+"\n") + clearLine + clearToEnd + syncEnd
 	if out.String() != want {
 		t.Fatalf("redraw = %q, want %q", out.String(), want)
 	}
@@ -477,5 +483,139 @@ func TestUnreadableDerivationIsReported(t *testing.T) {
 		`@nix {"action":"msg","level":3,"msg":"  /nix/store/` + strings.Repeat("z", 32) + `-missing.drv"}` + "\n"
 	if err := NewRenderer(&out, cfg).Consume(strings.NewReader(in)); err == nil || !strings.Contains(err.Error(), "missing.drv") {
 		t.Fatalf("Consume err = %v", err)
+	}
+}
+
+func TestDownloadProgress(t *testing.T) {
+	const mib = 1 << 20
+	n := func(v int) string { return strconv.Itoa(v) }
+	hello := "/nix/store/" + strings.Repeat("b", 32) + "-hello-2.12"
+	tools := "/nix/store/" + strings.Repeat("c", 32) + "-tools-1.0"
+	r := &replay{t: t, now: epoch, state: NewState(Options{Live: true}, epoch)}
+	r.apply(
+		`@nix {"action":"start","id":1,"level":0,"type":102,"text":""}`,
+		`@nix {"action":"start","id":2,"level":0,"type":103,"text":""}`,
+		`@nix {"action":"start","id":3,"level":0,"type":104,"text":""}`,
+		`@nix {"action":"result","id":3,"type":105,"fields":[0,2,0,0]}`,
+		`@nix {"action":"result","id":2,"type":105,"fields":[0,2,1,0]}`,
+		`@nix {"action":"result","id":1,"type":106,"fields":[101,`+n(100*mib)+`]}`,
+		`@nix {"action":"result","id":1,"type":106,"fields":[100,`+n(300*mib)+`]}`,
+		`@nix {"action":"start","id":10,"level":3,"type":100,"text":"","fields":["`+hello+`","https://cache.nixos.org","local"]}`,
+		`@nix {"action":"start","id":11,"level":4,"parent":10,"type":101,"text":"","fields":["https://cache.nixos.org/nar/x.nar.zst"]}`,
+		`@nix {"action":"result","id":11,"type":105,"fields":[0,`+n(60*mib)+`,0,0]}`,
+	)
+	r.now = epoch.Add(3 * time.Second)
+	r.apply(`@nix {"action":"result","id":11,"type":105,"fields":[` + n(30*mib) + `,` + n(60*mib) + `,0,0]}`)
+
+	if got, want := r.state.Downloads(), (Downloads{Done: 30 * mib, Expected: 100 * mib, Unpacked: 300 * mib}); got != want {
+		t.Fatalf("Downloads() = %+v, want %+v", got, want)
+	}
+	ic := ui.Unicode
+	want := []string{
+		"├─ " + ic.Download + ic.Gap + "hello-2.12  " + strings.Repeat("━", 10) + strings.Repeat("─", 10) + "  30.0 / 60.0 MiB  10.00 MiB/s  cache.nixos.org",
+		"┝━ " + ic.Download + ic.Gap + strings.Repeat("━", 6) + strings.Repeat("─", 14) + "  30.0 / 100.0 MiB  10.00 MiB/s  ETA 7s",
+		"┝━━━ Downloads",
+		"┕━ " + ic.Summary + ic.Gap + ic.With(ic.Download, "1") + " " + ic.With(ic.Done, "0") + " " + ic.With(ic.Planned, "1") + " 30.00 MiB │ " + ic.With(ic.Clock, "3s"),
+	}
+	if got := r.state.Frame(View{Width: 200, Height: 20}, r.now); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("frame:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	r.apply(
+		`@nix {"action":"result","id":11,"type":105,"fields":[`+n(60*mib)+`,`+n(60*mib)+`,0,0]}`,
+		`@nix {"action":"stop","id":11}`,
+		`@nix {"action":"result","id":10,"type":105,"fields":[`+n(50*mib)+`,`+n(200*mib)+`,0,0]}`,
+	)
+	unpacking := r.state.Frame(View{Width: 200, Height: 20}, r.now)
+	if want := "hello-2.12  " + strings.Repeat("━", 5) + strings.Repeat("─", 15) + "  unpacking 50.0 / 200.0 MiB  cache.nixos.org"; !strings.HasSuffix(unpacking[0], want) {
+		t.Fatalf("unpacking row = %q, want suffix %q", unpacking[0], want)
+	}
+	if got := r.state.Downloads().Done; got != 60*mib {
+		t.Fatalf("finished transfer bytes not kept: Done = %d", got)
+	}
+
+	stalled := r.state.Frame(View{Width: 200, Height: 20}, r.now.Add(rateWindow))
+	if strings.Contains(stalled[1], "/s") || strings.Contains(stalled[1], "ETA") {
+		t.Fatalf("stalled download still shows a rate: %q", stalled[1])
+	}
+
+	r.apply(
+		`@nix {"action":"stop","id":10}`,
+		`@nix {"action":"start","id":20,"level":3,"type":100,"text":"","fields":["`+tools+`","https://xilos.dev/","local"]}`,
+		`@nix {"action":"start","id":21,"level":4,"parent":20,"type":101,"text":"","fields":["https://xilos.dev/nar/y.nar.zst"]}`,
+		`@nix {"action":"result","id":21,"type":105,"fields":[`+n(40*mib)+`,`+n(40*mib)+`,0,0]}`,
+		`@nix {"action":"stop","id":21}`,
+		`@nix {"action":"stop","id":20}`,
+		`@nix {"action":"result","id":2,"type":105,"fields":[2,2,0,0]}`,
+	)
+	done := r.state.Frame(View{Width: 200, Height: 20}, r.now)
+	if len(done) != 2 || strings.Contains(done[0], "ETA") {
+		t.Fatalf("download row outlives the downloads:\n%s", strings.Join(done, "\n"))
+	}
+	summary := r.state.Summary(ui.Style{}, r.now)
+	if want := "Finished at 12:00:03 after 3s: fetched 2 (60.00 MiB from cache.nixos.org, 40.00 MiB from xilos.dev)"; len(summary) != 1 || !strings.HasSuffix(summary[0], want) {
+		t.Fatalf("summary = %q, want suffix %q", summary, want)
+	}
+}
+
+func TestPhaseLabel(t *testing.T) {
+	r := &replay{t: t, now: epoch, state: NewState(Options{Live: true}, epoch)}
+	ic := ui.Unicode
+	legend := func() string {
+		frame := r.state.Frame(View{Width: 200, Height: 20}, r.now)
+		return frame[len(frame)-1]
+	}
+	r.apply(`@nix {"action":"start","id":1,"level":4,"type":0,"text":"evaluating derivation 'flake:x#y'"}`)
+	if got, want := legend(), "╺━ evaluating │ "+ic.With(ic.Clock, "0s"); got != want {
+		t.Fatalf("legend while evaluating = %q, want %q", got, want)
+	}
+	r.apply(`@nix {"action":"start","id":2,"level":6,"type":0,"text":"querying info about missing paths"}`)
+	if got := legend(); !strings.Contains(got, "evaluating") {
+		t.Fatalf("evaluation does not take precedence over querying: %q", got)
+	}
+	r.apply(`@nix {"action":"stop","id":1}`)
+	if got := legend(); !strings.Contains(got, "querying caches") {
+		t.Fatalf("legend while querying = %q", got)
+	}
+	r.apply(`@nix {"action":"stop","id":2}`)
+	if got, want := legend(), "╺━ "+ic.With(ic.Clock, "0s"); got != want {
+		t.Fatalf("legend after evaluation = %q, want %q", got, want)
+	}
+}
+
+func TestThroughputSamplesAreBounded(t *testing.T) {
+	var tp throughput
+	for i := range 10_000 {
+		tp.record(epoch.Add(time.Duration(i)*10*time.Millisecond), int64(i)*1000)
+	}
+	if n := len(tp.samples); n > 2*int(rateWindow/sampleInterval) {
+		t.Fatalf("throughput keeps %d samples", n)
+	}
+	now := epoch.Add(99_990 * time.Millisecond)
+	if got := tp.perSecond(now); got < 99_000 || got > 101_000 {
+		t.Fatalf("perSecond = %d, want about 100000", got)
+	}
+}
+
+func TestStreamedDownloadIsEstimatedFromUnpack(t *testing.T) {
+	const mib = 1 << 20
+	n := func(v int) string { return strconv.Itoa(v) }
+	path := "/nix/store/" + strings.Repeat("d", 32) + "-fortune-mod-3.26.0"
+	r := &replay{t: t, now: epoch, state: NewState(Options{Live: true}, epoch)}
+	r.apply(
+		`@nix {"action":"start","id":10,"level":3,"type":100,"text":"","fields":["`+path+`","https://cache.nixos.org","local"]}`,
+		`@nix {"action":"start","id":11,"level":4,"parent":10,"type":101,"text":"","fields":["https://cache.nixos.org/nar/z.nar.zst"]}`,
+		`@nix {"action":"result","id":11,"type":105,"fields":[0,`+n(60*mib)+`,0,0]}`,
+		`@nix {"action":"result","id":10,"type":105,"fields":[`+n(100*mib)+`,`+n(200*mib)+`,0,0]}`,
+	)
+	if got := r.state.Downloads().Done; got != 30*mib {
+		t.Fatalf("in-flight download = %d, want half of the compressed size (%d) while half is unpacked", got, 30*mib)
+	}
+	r.apply(
+		`@nix {"action":"result","id":11,"type":105,"fields":[`+n(61*mib)+`,`+n(61*mib)+`,0,0]}`,
+		`@nix {"action":"stop","id":11}`,
+	)
+	if got := r.state.Downloads().Done; got != 61*mib {
+		t.Fatalf("finished download = %d, want the reported %d", got, 61*mib)
 	}
 }

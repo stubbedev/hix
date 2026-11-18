@@ -13,7 +13,8 @@ import (
 
 const (
 	barWidth          = 20
-	reservedRows      = 2
+	maxTransferName   = 32
+	spareRows         = 1
 	minCollapsedChain = 2
 )
 
@@ -23,12 +24,26 @@ type View struct {
 	Height int
 }
 
+type footerLine struct {
+	joined string
+	alone  string
+	body   string
+}
+
 func (s *State) Frame(v View, now time.Time) []string {
 	rows := s.tree(v.Style, now)
-	if budget := v.Height - reservedRows; len(rows) > budget {
+	footer := s.footer(v.Style, now)
+	if budget := v.Height - len(footer) - spareRows; len(rows) > budget {
 		rows = s.fitRows(v.Style, now, max(budget, 0))
 	}
-	lines := append(rows, s.legend(v.Style, now, len(rows) > 0))
+	lines := rows
+	for i, f := range footer {
+		corner := f.alone
+		if len(rows) > 0 || i > 0 {
+			corner = f.joined
+		}
+		lines = append(lines, v.Style.Paint(corner, ui.Gray)+f.body)
+	}
 	for i, line := range lines {
 		lines[i] = ui.Truncate(line, v.Width-1)
 	}
@@ -36,31 +51,43 @@ func (s *State) Frame(v View, now time.Time) []string {
 }
 
 func (s *State) Summary(st ui.Style, now time.Time) []string {
-	failed := s.withStatus(Failed)
-	if s.Builds.Expected == 0 && s.Copies.Expected == 0 && len(failed) == 0 {
+	builds := s.Builds()
+	if !builds.Any() && s.Copies.Expected == 0 {
 		return nil
 	}
 	ic := st.Icons()
 	elapsed := formatDuration(now.Sub(s.started))
-	if n := s.failedBuilds(); n > 0 {
-		head := fmt.Sprintf("%d failed build(s)", n)
+	if builds.Failed > 0 {
+		head := fmt.Sprintf("%d failed build(s)", builds.Failed)
 		if cancelled := len(s.withStatus(Cancelled)); cancelled > 0 {
 			head += fmt.Sprintf(", %d cancelled", cancelled)
 		}
-		return append([]string{st.Paint(ic.With(ic.Failed, head+" after "+elapsed), ui.Bold, ui.Red)}, failureReport(st, failed)...)
+		return append([]string{st.Paint(ic.With(ic.Failed, head+" after "+elapsed), ui.Bold, ui.Red)}, failureReport(st, s.withStatus(Failed))...)
 	}
 	var parts []string
-	if s.Builds.Done > 0 {
-		parts = append(parts, "built "+strconv.FormatInt(s.Builds.Done, 10))
+	if builds.Done > 0 {
+		parts = append(parts, "built "+strconv.FormatInt(builds.Done, 10))
 	}
 	if s.Copies.Done > 0 {
-		parts = append(parts, "fetched "+strconv.FormatInt(s.Copies.Done, 10))
+		parts = append(parts, "fetched "+strconv.FormatInt(s.Copies.Done, 10)+s.fetchedFrom())
 	}
-	text := "Finished in " + elapsed
+	text := "Finished at " + now.Format(time.TimeOnly) + " after " + elapsed
 	if len(parts) > 0 {
 		text += ": " + strings.Join(parts, ", ")
 	}
 	return []string{st.Paint(ic.With(ic.Done, text), ui.Green)}
+}
+
+func (s *State) fetchedFrom() string {
+	fetched := s.Fetched()
+	if len(fetched) == 0 {
+		return ""
+	}
+	sources := make([]string, len(fetched))
+	for i, f := range fetched {
+		sources[i] = ui.Bytes(f.Bytes) + " from " + f.Substituter
+	}
+	return " (" + strings.Join(sources, ", ") + ")"
 }
 
 func failureReport(st ui.Style, failed []*Derivation) []string {
@@ -93,10 +120,6 @@ func (s *State) withStatus(status Status) []*Derivation {
 	}
 	slices.SortFunc(out, compareDerivations)
 	return out
-}
-
-func (s *State) failedBuilds() int64 {
-	return max(int64(len(s.withStatus(Failed))), s.Builds.Failed)
 }
 
 type branch struct {
@@ -291,52 +314,129 @@ func (s *State) drvRow(st ui.Style, d *Derivation, now time.Time) string {
 
 func (s *State) transferRows(st ui.Style, now time.Time) []string {
 	transfers := make([]*Transfer, 0, len(s.transfers))
+	nameWidth := 0
 	for _, t := range s.transfers {
 		transfers = append(transfers, t)
+		nameWidth = max(nameWidth, ui.Width(t.Name))
 	}
+	nameWidth = min(nameWidth, maxTransferName)
 	slices.SortFunc(transfers, func(a, b *Transfer) int {
 		return cmp.Or(a.Start.Compare(b.Start), cmp.Compare(a.Name, b.Name))
 	})
 	ic := st.Icons()
 	rows := make([]string, len(transfers))
 	for i, t := range transfers {
-		row := connectors(st, branch{}) + st.Paint(ic.Download+ic.Gap, ui.Cyan) + t.Name
-		if t.Expected > 0 {
-			row += "  " + bar(st, t.Done, t.Expected) + "  " + st.Paint(ui.Bytes(t.Done)+" / "+ui.Bytes(t.Expected), ui.Gray)
+		row := connectors(st, branch{}) + st.Paint(ic.Download+ic.Gap, ui.Cyan) + ui.PadRight(t.Name, nameWidth)
+		if progress := transferProgress(st, t, now); progress != "" {
+			row += "  " + progress
 		}
-		rows[i] = row + "  " + st.Paint(ic.With(ic.Clock, formatDuration(now.Sub(t.Start))), ui.Gray)
+		rows[i] = row + "  " + st.Paint(t.Substituter, ui.Faint)
 	}
 	return rows
 }
 
-func bar(st ui.Style, done, total int64) string {
-	filled := int(min(done, total) * barWidth / total)
-	return st.Paint(strings.Repeat("━", filled), ui.Cyan) + st.Paint(strings.Repeat("─", barWidth-filled), ui.Gray)
+func transferProgress(st ui.Style, t *Transfer, now time.Time) string {
+	if t.Unpacking() {
+		return bar(st, t.Unpack.Done, t.Unpack.Expected, ui.Blue) + "  " + st.Paint("unpacking "+ui.ByteProgress(t.Unpack.Done, t.Unpack.Expected), ui.Gray)
+	}
+	if t.Download.Expected <= 0 {
+		return ""
+	}
+	done := t.Downloaded()
+	out := bar(st, done, t.Download.Expected, ui.Cyan) + "  " + st.Paint(ui.ByteProgress(done, t.Download.Expected), ui.Gray)
+	if elapsed := now.Sub(t.Start); elapsed >= time.Second {
+		out += "  " + st.Paint(ui.Bytes(int64(float64(done)/elapsed.Seconds()))+"/s", ui.Cyan)
+	}
+	return out
 }
 
-func (s *State) legend(st ui.Style, now time.Time, connected bool) string {
-	ic := st.Icons()
-	corner := "╺━ "
-	if connected {
-		corner = "┕━ "
+func bar(st ui.Style, done, total int64, color ui.Attr) string {
+	filled := int(min(done, total) * barWidth / total)
+	return st.Paint(strings.Repeat("━", filled), color) + st.Paint(strings.Repeat("─", barWidth-filled), ui.Gray)
+}
+
+func (s *State) footer(st ui.Style, now time.Time) []footerLine {
+	var lines []footerLine
+	if row, ok := s.downloadRow(st, now); ok {
+		lines = append(lines, footerLine{joined: "┝━ ", alone: "┍━ ", body: row})
 	}
-	var parts []string
-	if b := s.Builds; b.Expected > 0 {
-		builds := []string{
-			st.Paint(ic.With(ic.Running, strconv.FormatInt(b.Running, 10)), ui.Yellow),
-			st.Paint(ic.With(ic.Done, fmt.Sprintf("%d/%d", b.Done, b.Expected)), ui.Green),
+	ic := st.Icons()
+	clock := st.Paint(ic.With(ic.Clock, formatDuration(now.Sub(s.started))), ui.Gray)
+	var trailer []string
+	if phase := s.Phase(); phase != PhaseNone {
+		trailer = append(trailer, st.Paint(phase.String(), ui.Magenta, ui.Italic))
+	}
+	trailer = append(trailer, clock)
+	sep := st.Paint(" │ ", ui.Gray)
+	columns := s.columns(st)
+	if len(columns) == 0 {
+		return append(lines, footerLine{joined: "┕━ ", alone: "╺━ ", body: strings.Join(trailer, sep)})
+	}
+	headers := make([]string, len(columns))
+	cells := make([]string, len(columns))
+	for i, c := range columns {
+		width := max(ui.Width(c.header), ui.Width(c.cell))
+		headers[i] = st.Paint(c.header, ui.Bold)
+		if i < len(columns)-1 {
+			headers[i] = ui.PadRight(headers[i], width)
 		}
-		if failed := s.failedBuilds(); failed > 0 {
-			builds = append(builds, st.Paint(ic.With(ic.Failed, strconv.FormatInt(failed, 10)), ui.Red))
+		cells[i] = ui.PadRight(c.cell, width)
+	}
+	return append(lines,
+		footerLine{joined: "┝━━━ ", alone: "┍━━━ ", body: strings.Join(headers, sep)},
+		footerLine{joined: "┕━ ", alone: "╺━ ", body: st.Paint(ic.Summary+ic.Gap, ui.Bold) + strings.Join(append(cells, trailer...), sep)},
+	)
+}
+
+type column struct {
+	header string
+	cell   string
+}
+
+func (s *State) columns(st ui.Style) []column {
+	ic := st.Icons()
+	count := func(icon string, n int64, color ui.Attr) string {
+		return st.Paint(ic.With(icon, strconv.FormatInt(n, 10)), color)
+	}
+	var out []column
+	if b := s.Builds(); b.Any() {
+		cell := []string{count(ic.Running, b.Running, ui.Yellow), count(ic.Done, b.Done, ui.Green)}
+		if b.Failed > 0 {
+			cell = append(cell, count(ic.Failed, b.Failed, ui.Red))
 		}
-		builds = append(builds, st.Paint(ic.With(ic.Planned, strconv.FormatInt(b.Waiting(), 10)), ui.Blue))
-		parts = append(parts, strings.Join(builds, " "))
+		cell = append(cell, count(ic.Planned, b.Planned, ui.Blue))
+		out = append(out, column{header: "Builds", cell: strings.Join(cell, " ")})
 	}
 	if c := s.Copies; c.Expected > 0 {
-		parts = append(parts, st.Paint(ic.With(ic.Download, fmt.Sprintf("%d/%d", c.Done, c.Expected)), ui.Cyan))
+		cell := []string{count(ic.Download, c.Running, ui.Yellow), count(ic.Done, c.Done, ui.Green)}
+		if c.Failed > 0 {
+			cell = append(cell, count(ic.Failed, c.Failed, ui.Red))
+		}
+		cell = append(cell, count(ic.Planned, c.Waiting(), ui.Blue))
+		if fetched := s.Downloads(); fetched.Done > 0 {
+			cell = append(cell, st.Paint(ui.Bytes(fetched.Done), ui.Cyan))
+		}
+		out = append(out, column{header: "Downloads", cell: strings.Join(cell, " ")})
 	}
-	parts = append(parts, st.Paint(ic.With(ic.Clock, formatDuration(now.Sub(s.started))), ui.Gray))
-	return st.Paint(corner, ui.Gray) + strings.Join(parts, st.Paint(" │ ", ui.Gray))
+	return out
+}
+
+func (s *State) downloadRow(st ui.Style, now time.Time) (string, bool) {
+	d := s.Downloads()
+	if d.Expected <= 0 || s.Copies.Done >= s.Copies.Expected {
+		return "", false
+	}
+	ic := st.Icons()
+	row := st.Paint(ic.Download+ic.Gap, ui.Cyan) + bar(st, d.Done, d.Expected, ui.Cyan) + "  " + st.Paint(ui.ByteProgress(d.Done, d.Expected), ui.Gray)
+	rate := s.rate.perSecond(now)
+	if rate <= 0 {
+		return row, true
+	}
+	row += "  " + st.Paint(ui.Bytes(rate)+"/s", ui.Cyan)
+	if eta := time.Duration((d.Expected-d.Done)/rate) * time.Second; eta >= time.Second {
+		row += "  " + st.Paint("ETA "+formatDuration(eta), ui.Gray)
+	}
+	return row, true
 }
 
 func formatDuration(d time.Duration) string {

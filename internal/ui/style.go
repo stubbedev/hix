@@ -153,19 +153,44 @@ func escapeLen(s string) int {
 	return len(s)
 }
 
+const byteUnit = 1024
+
 func Bytes(n int64) string {
-	const unit = 1024
 	sign := ""
 	if n < 0 {
 		sign, n = "-", -n
 	}
-	if n < unit {
+	if n < byteUnit {
 		return fmt.Sprintf("%s%d B", sign, n)
 	}
-	value, exp := float64(n)/unit, 0
-	for value >= unit && exp < 4 {
-		value /= unit
+	exp := byteExponent(n)
+	return fmt.Sprintf("%s%.2f %s", sign, scaleBytes(n, exp), byteSuffix(exp))
+}
+
+func ByteProgress(done, total int64) string {
+	if total < byteUnit {
+		return fmt.Sprintf("%d / %d B", done, total)
+	}
+	exp := byteExponent(total)
+	return fmt.Sprintf("%.1f / %.1f %s", scaleBytes(done, exp), scaleBytes(total, exp), byteSuffix(exp))
+}
+
+func byteExponent(n int64) int {
+	exp := 0
+	for value := float64(n) / byteUnit; value >= byteUnit && exp < 4; value /= byteUnit {
 		exp++
 	}
-	return fmt.Sprintf("%s%.2f %ciB", sign, value, "KMGTP"[exp])
+	return exp
+}
+
+func scaleBytes(n int64, exp int) float64 {
+	value := float64(n) / byteUnit
+	for range exp {
+		value /= byteUnit
+	}
+	return value
+}
+
+func byteSuffix(exp int) string {
+	return string("KMGTP"[exp]) + "iB"
 }

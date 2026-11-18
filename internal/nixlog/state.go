@@ -1,7 +1,9 @@
 package nixlog
 
 import (
+	"cmp"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -46,11 +48,88 @@ type Failure struct {
 	Log    []string
 }
 
-type Transfer struct {
-	Name     string
+type BuildCounts struct {
+	Running int64
+	Done    int64
+	Failed  int64
+	Planned int64
+}
+
+func (c BuildCounts) Any() bool {
+	return c.Running+c.Done+c.Failed+c.Planned > 0
+}
+
+type ByteCount struct {
 	Done     int64
 	Expected int64
-	Start    time.Time
+}
+
+type Transfer struct {
+	Name        string
+	Substituter string
+	Start       time.Time
+	Download    ByteCount
+	Unpack      ByteCount
+	downloading int
+}
+
+func (t *Transfer) Unpacking() bool {
+	return t.downloading == 0 && t.Unpack.Expected > 0
+}
+
+func (t *Transfer) Downloaded() int64 {
+	d, u := t.Download, t.Unpack
+	if t.downloading == 0 || d.Expected <= 0 || u.Expected <= 0 {
+		return d.Done
+	}
+	streamed := int64(float64(min(u.Done, u.Expected)) / float64(u.Expected) * float64(d.Expected))
+	return max(d.Done, streamed)
+}
+
+type Downloads struct {
+	Done     int64
+	Expected int64
+	Unpacked int64
+}
+
+type SubstituterBytes struct {
+	Substituter string
+	Bytes       int64
+}
+
+type Phase int
+
+const (
+	PhaseNone Phase = iota
+	PhaseQuerying
+	PhaseEvaluating
+)
+
+func (p Phase) String() string {
+	switch p {
+	case PhaseEvaluating:
+		return "evaluating"
+	case PhaseQuerying:
+		return "querying caches"
+	}
+	return ""
+}
+
+var phasePrefixes = []struct {
+	prefix string
+	phase  Phase
+}{
+	{"evaluating ", PhaseEvaluating},
+	{"querying info about missing paths", PhaseQuerying},
+}
+
+func phaseOf(text string) Phase {
+	for _, p := range phasePrefixes {
+		if strings.HasPrefix(text, p.prefix) {
+			return p.phase
+		}
+	}
+	return PhaseNone
 }
 
 type Line struct {
@@ -70,6 +149,18 @@ type activity struct {
 	parent uint64
 	name   string
 	drv    string
+	phase  Phase
+}
+
+type expectation struct {
+	activity uint64
+	typ      ActivityType
+}
+
+type nar struct {
+	transfer    uint64
+	substituter string
+	bytes       int64
 }
 
 type planKind int
@@ -104,8 +195,12 @@ type State struct {
 	consumers  map[string][]string
 	transfers  map[uint64]*Transfer
 	measured   map[string]time.Duration
+	expected   map[expectation]int64
+	nars       map[uint64]*nar
+	fetched    map[string]int64
+	phases     map[Phase]int
+	rate       throughput
 	plan       planKind
-	Builds     Progress
 	Copies     Progress
 }
 
@@ -118,6 +213,10 @@ func NewState(opts Options, started time.Time) *State {
 		consumers:  make(map[string][]string),
 		transfers:  make(map[uint64]*Transfer),
 		measured:   make(map[string]time.Duration),
+		expected:   make(map[expectation]int64),
+		nars:       make(map[uint64]*nar),
+		fetched:    make(map[string]int64),
+		phases:     make(map[Phase]int),
 	}
 }
 
@@ -128,7 +227,7 @@ func (s *State) Apply(e Event, now time.Time) ([]Line, error) {
 	case ActionStop:
 		s.stop(e.ID, now)
 	case ActionResult:
-		return s.result(e), nil
+		return s.result(e, now), nil
 	case ActionMsg:
 		return s.msg(e)
 	}
@@ -212,8 +311,11 @@ func (s *State) derivation(drvPath string) (*Derivation, error) {
 
 func (s *State) start(e Event, now time.Time) ([]Line, error) {
 	typ := ActivityType(e.Type)
-	a := &activity{typ: typ, parent: e.Parent, name: activityName(e)}
+	a := &activity{typ: typ, parent: e.Parent, name: activityName(e), phase: phaseOf(e.Text)}
 	s.activities[e.ID] = a
+	if a.phase != PhaseNone {
+		s.phases[a.phase]++
+	}
 	switch typ {
 	case ActivityBuild:
 		drvPath, _ := e.StringField(0)
@@ -224,7 +326,13 @@ func (s *State) start(e Event, now time.Time) ([]Line, error) {
 		a.drv = drvPath
 		d.Status, d.Start, d.Phase = Running, now, ""
 	case ActivityCopyPath:
-		s.transfers[e.ID] = &Transfer{Name: a.name, Start: now}
+		from, _ := e.StringField(1)
+		s.transfers[e.ID] = &Transfer{Name: a.name, Substituter: substituterName(from), Start: now}
+	case ActivityFileTransfer:
+		if t, id := s.transferOf(a); t != nil {
+			t.downloading++
+			s.nars[e.ID] = &nar{transfer: id, substituter: t.Substituter}
+		}
 	}
 	if s.opts.Live || e.Text == "" || e.Level > LevelInfo {
 		return nil, nil
@@ -239,6 +347,16 @@ func (s *State) stop(id uint64, now time.Time) {
 	}
 	delete(s.activities, id)
 	delete(s.transfers, id)
+	if a.phase != PhaseNone {
+		s.phases[a.phase]--
+	}
+	if n, ok := s.nars[id]; ok {
+		s.fetched[n.substituter] += n.bytes
+		delete(s.nars, id)
+		if t, ok := s.transfers[n.transfer]; ok {
+			t.downloading--
+		}
+	}
 	if a.drv == "" {
 		return
 	}
@@ -248,27 +366,19 @@ func (s *State) stop(id uint64, now time.Time) {
 	}
 }
 
-func (s *State) result(e Event) []Line {
+func (s *State) result(e Event, now time.Time) []Line {
 	a, ok := s.activities[e.ID]
 	if !ok {
 		return nil
 	}
 	switch ResultType(e.Type) {
 	case ResultProgress:
-		p := Progress{}
-		p.Done, _ = e.IntField(0)
-		p.Expected, _ = e.IntField(1)
-		p.Running, _ = e.IntField(2)
-		p.Failed, _ = e.IntField(3)
-		switch a.typ {
-		case ActivityBuilds:
-			s.Builds = p
-		case ActivityCopyPaths:
-			s.Copies = p
-		case ActivityFileTransfer:
-			if t := s.transferOf(a); t != nil {
-				t.Done, t.Expected = p.Done, p.Expected
-			}
+		s.progress(e, a, now)
+	case ResultSetExpected:
+		typ, okType := e.IntField(0)
+		n, okN := e.IntField(1)
+		if okType && okN {
+			s.expected[expectation{activity: e.ID, typ: ActivityType(typ)}] = n
 		}
 	case ResultSetPhase:
 		if phase, ok := e.StringField(0); ok && a.drv != "" {
@@ -284,21 +394,127 @@ func (s *State) result(e Event) []Line {
 	return nil
 }
 
-func (s *State) transferOf(a *activity) *Transfer {
+func (s *State) progress(e Event, a *activity, now time.Time) {
+	p := Progress{}
+	p.Done, _ = e.IntField(0)
+	p.Expected, _ = e.IntField(1)
+	p.Running, _ = e.IntField(2)
+	p.Failed, _ = e.IntField(3)
+	bytes := ByteCount{Done: p.Done, Expected: p.Expected}
+	switch a.typ {
+	case ActivityCopyPaths:
+		s.Copies = p
+	case ActivityCopyPath:
+		t, ok := s.transfers[e.ID]
+		if !ok {
+			return
+		}
+		t.Unpack = bytes
+		s.rate.record(now, s.Downloads().Done)
+	case ActivityFileTransfer:
+		n, ok := s.nars[e.ID]
+		if !ok {
+			return
+		}
+		n.bytes = p.Done
+		if t, ok := s.transfers[n.transfer]; ok {
+			t.Download = bytes
+		}
+		s.rate.record(now, s.Downloads().Done)
+	}
+}
+
+func (s *State) transferOf(a *activity) (*Transfer, uint64) {
 	for id := a.parent; id != 0; {
 		if t, ok := s.transfers[id]; ok {
-			return t
+			return t, id
 		}
 		parent, ok := s.activities[id]
 		if !ok {
-			return nil
+			return nil, 0
 		}
 		id = parent.parent
 	}
-	return nil
+	return nil, 0
 }
 
 func (s *State) Measured() map[string]time.Duration { return s.measured }
+
+func (s *State) Builds() BuildCounts {
+	var c BuildCounts
+	for _, d := range s.drvs {
+		switch d.Status {
+		case Running:
+			c.Running++
+		case Done:
+			c.Done++
+		case Failed:
+			c.Failed++
+		case Planned:
+			c.Planned++
+		}
+	}
+	return c
+}
+
+func (s *State) Downloads() Downloads {
+	var d Downloads
+	for _, n := range s.fetched {
+		d.Done += n
+	}
+	for _, t := range s.transfers {
+		if t.downloading > 0 {
+			d.Done += t.Downloaded()
+		}
+	}
+	for k, n := range s.expected {
+		switch k.typ {
+		case ActivityFileTransfer:
+			d.Expected += n
+		case ActivityCopyPath:
+			d.Unpacked += n
+		}
+	}
+	return d
+}
+
+func (s *State) Fetched() []SubstituterBytes {
+	totals := make(map[string]int64, len(s.fetched))
+	for name, n := range s.fetched {
+		totals[name] += n
+	}
+	for _, t := range s.transfers {
+		if t.downloading > 0 {
+			totals[t.Substituter] += t.Downloaded()
+		}
+	}
+	out := make([]SubstituterBytes, 0, len(totals))
+	for name, n := range totals {
+		if n > 0 {
+			out = append(out, SubstituterBytes{Substituter: name, Bytes: n})
+		}
+	}
+	slices.SortFunc(out, func(a, b SubstituterBytes) int {
+		return cmp.Or(cmp.Compare(b.Bytes, a.Bytes), cmp.Compare(a.Substituter, b.Substituter))
+	})
+	return out
+}
+
+func (s *State) Phase() Phase {
+	for p := PhaseEvaluating; p > PhaseNone; p-- {
+		if s.phases[p] > 0 {
+			return p
+		}
+	}
+	return PhaseNone
+}
+
+func substituterName(uri string) string {
+	if _, rest, ok := strings.Cut(uri, "://"); ok {
+		uri = rest
+	}
+	return strings.TrimSuffix(uri, "/")
+}
 
 func activityName(e Event) string {
 	p, ok := e.StringField(0)

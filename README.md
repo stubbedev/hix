@@ -15,11 +15,21 @@ phix trust         # add an age recipient to .sops.yaml and re-wrap secrets/*
 phix help          # every verb
 ```
 
-Build times are remembered in `~/.cache/phix/build-times.json` and shown as
-estimates next to running builds. `--diff never|always` skips the closure diff
-or makes a failing one fatal (by default it only warns). Activation and hook
-output is condensed to warnings, errors, unit changes and the bootloader
-status; the rest is printed only if the step fails, or always with `-v`.
+Builds and substitutions are shown live, in the style of nix-output-monitor:
+running builds as a dependency tree with their phase and elapsed time; each
+path being substituted with a progress bar, bytes, speed and the substituter
+it comes from (then its unpacking progress); an overall download bar with
+throughput and an ETA; and a `Builds │ Downloads` table of running, done and
+waiting counts. Until builds start, the status line says whether nix is
+evaluating or querying caches. The run ends with `Finished at <time> after
+<elapsed>`, what was built and fetched, and how much came from each
+substituter. Build times are remembered in `~/.cache/phix/build-times.json`
+and shown as estimates next to running builds.
+
+`--diff never|always` skips the closure diff or makes a failing one fatal (by
+default it only warns). Activation and hook output is condensed to warnings,
+errors, unit changes and the bootloader status; the rest is printed only if
+the step fails, or always with `-v`.
 
 Commands that change the system, the flake or its secrets (every rebuild
 verb, `rollback`, `gc`, `update`, `upgrade`, `trust`, `secret`) take a lock
