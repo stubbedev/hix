@@ -110,7 +110,7 @@ func TestLiveFetch(t *testing.T) {
 	if strings.Contains(out, "copying path") || strings.Contains(out, "will be fetched") {
 		t.Fatalf("live output prints what the frame shows:\n%q", out)
 	}
-	if !strings.HasPrefix(out, hideCursor) || !strings.HasSuffix(out, showCursor) {
+	if !strings.HasPrefix(out, syncStart+hideCursor) || !strings.HasSuffix(out, showCursor+syncEnd) {
 		t.Fatalf("live output does not hide and restore the cursor:\n%q", out)
 	}
 	ic := ui.Unicode
@@ -118,7 +118,7 @@ func TestLiveFetch(t *testing.T) {
 		t.Fatalf("no final summary:\n%q", out)
 	}
 	for segment := range strings.SplitSeq(out, "\n") {
-		for line := range strings.SplitSeq(segment, clearToEnd) {
+		for line := range strings.FieldsFuncSeq(segment, func(r rune) bool { return r == '\x1b' }) {
 			if ui.Width(line) >= width {
 				t.Fatalf("frame line not narrower than the terminal: %q", line)
 			}
@@ -346,7 +346,7 @@ func TestEstimates(t *testing.T) {
 	}
 }
 
-func TestResizeClearsReflowedFrame(t *testing.T) {
+func TestResizeRewindsReflowedFrame(t *testing.T) {
 	var out bytes.Buffer
 	now := epoch
 	r := NewRenderer(&out, Config{Width: 80, Height: 20, Now: fixedClock(&now)})
@@ -359,16 +359,45 @@ func TestResizeClearsReflowedFrame(t *testing.T) {
 	r.flush()
 	out.Reset()
 	r.resize(ui.Size{Width: 20, Height: 20})
-	r.clearFrame()
-	r.flush()
-	if want := "\r\x1b[" + strconv.Itoa(rows-1) + "A" + clearToEnd; out.String() != want {
-		t.Fatalf("clear after resize = %q, want %q", out.String(), want)
-	}
 	r.redraw()
+	r.flush()
+	if want := syncStart + "\r\x1b[" + strconv.Itoa(rows-1) + "A"; !strings.HasPrefix(out.String(), want) {
+		t.Fatalf("redraw after resize = %q, want prefix %q", out.String(), want)
+	}
 	for _, w := range r.widths {
 		if w >= 20 {
 			t.Fatalf("frame redrawn wider than the new terminal: %v", r.widths)
 		}
+	}
+}
+
+func TestRedrawOverwritesInPlace(t *testing.T) {
+	var out bytes.Buffer
+	now := epoch
+	r := NewRenderer(&out, Config{Width: 80, Height: 20, Now: fixedClock(&now)})
+	r.handle([]byte(`@nix {"action":"start","id":1,"level":3,"type":105,"text":"","fields":["` + drvPath("hello") + `","",1,1]}`))
+	r.redraw()
+	r.flush()
+	out.Reset()
+	now = now.Add(time.Second)
+	r.redraw()
+	r.flush()
+	lines := r.state.Frame(r.cfg.view(), now)
+	want := syncStart + "\r\x1b[1A" + lines[0] + clearLine + "\n" + lines[1] + clearLine + clearToEnd + syncEnd
+	if out.String() != want {
+		t.Fatalf("redraw = %q, want %q", out.String(), want)
+	}
+}
+
+func TestPrintedLineKeepsFullWidthCharacter(t *testing.T) {
+	var out bytes.Buffer
+	r := NewRenderer(&out, Config{Width: 10, Height: 20})
+	r.print(strings.Repeat("x", 10))
+	r.print("short")
+	r.flush()
+	want := syncStart + strings.Repeat("x", 10) + "\n" + "short" + clearLine + "\n" + syncEnd
+	if out.String() != want {
+		t.Fatalf("printed = %q, want %q", out.String(), want)
 	}
 }
 

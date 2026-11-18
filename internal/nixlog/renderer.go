@@ -19,6 +19,9 @@ const (
 	hideCursor    = "\x1b[?25l"
 	showCursor    = "\x1b[?25h"
 	clearToEnd    = "\x1b[J"
+	clearLine     = "\x1b[K"
+	syncStart     = "\x1b[?2026h"
+	syncEnd       = "\x1b[?2026l"
 )
 
 type Config struct {
@@ -38,6 +41,7 @@ type Renderer struct {
 	state    *State
 	widths   []int
 	frame    string
+	printed  bool
 	buf      bytes.Buffer
 	firstErr error
 }
@@ -46,11 +50,13 @@ func NewRenderer(w io.Writer, cfg Config) *Renderer {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Renderer{
+	r := &Renderer{
 		w:     w,
 		cfg:   cfg,
 		state: NewState(Options{BuildLogs: cfg.BuildLogs, Live: cfg.live(), Inputs: cfg.Inputs, Estimates: cfg.Estimates}, cfg.Now()),
 	}
+	r.resetBuf()
+	return r
 }
 
 func (c Config) live() bool { return c.Width > 0 }
@@ -121,16 +127,19 @@ func (r *Renderer) consumeLive(in io.Reader) error {
 			var err error
 			open, err = r.applyBatch(res, lines)
 			readErr = firstError(readErr, err)
+			if open && r.printed {
+				r.redraw()
+			}
 		case size := <-r.cfg.Resize:
 			r.resize(size)
+			r.redraw()
 		case <-ticker.C:
-		}
-		if open {
 			r.redraw()
 		}
 		r.flush()
 	}
-	r.clearFrame()
+	r.rewind()
+	r.buf.WriteString(clearToEnd)
 	for _, line := range r.state.Summary(r.cfg.Style, r.cfg.Now()) {
 		r.buf.WriteString(line + "\n")
 	}
@@ -206,9 +215,15 @@ func (r *Renderer) format(l Line) string {
 }
 
 func (r *Renderer) print(line string) {
-	r.clearFrame()
-	r.buf.WriteString(line)
+	if !r.cfg.live() {
+		r.buf.WriteString(line)
+		r.buf.WriteByte('\n')
+		return
+	}
+	r.rewind()
+	r.overwrite(line)
 	r.buf.WriteByte('\n')
+	r.printed = true
 }
 
 func (r *Renderer) redraw() {
@@ -217,16 +232,27 @@ func (r *Renderer) redraw() {
 	if len(r.widths) > 0 && frame == r.frame {
 		return
 	}
-	r.clearFrame()
-	r.buf.WriteString(frame)
-	r.frame = frame
-	r.widths = r.widths[:0]
-	for _, line := range lines {
+	r.rewind()
+	for i, line := range lines {
+		if i > 0 {
+			r.buf.WriteByte('\n')
+		}
+		r.overwrite(line)
 		r.widths = append(r.widths, ui.Width(line))
+	}
+	r.buf.WriteString(clearToEnd)
+	r.frame = frame
+	r.printed = false
+}
+
+func (r *Renderer) overwrite(line string) {
+	r.buf.WriteString(line)
+	if width := ui.Width(line); width == 0 || width%r.cfg.Width != 0 {
+		r.buf.WriteString(clearLine)
 	}
 }
 
-func (r *Renderer) clearFrame() {
+func (r *Renderer) rewind() {
 	if len(r.widths) == 0 {
 		return
 	}
@@ -235,7 +261,6 @@ func (r *Renderer) clearFrame() {
 	if rows > 1 {
 		r.buf.WriteString("\x1b[" + strconv.Itoa(rows-1) + "A")
 	}
-	r.buf.WriteString(clearToEnd)
 	r.widths = r.widths[:0]
 }
 
@@ -247,14 +272,29 @@ func screenRows(widths []int, termWidth int) int {
 	return rows
 }
 
+func (r *Renderer) syncHead() string {
+	if r.cfg.live() {
+		return syncStart
+	}
+	return ""
+}
+
+func (r *Renderer) resetBuf() {
+	r.buf.Reset()
+	r.buf.WriteString(r.syncHead())
+}
+
 func (r *Renderer) flush() {
-	if r.buf.Len() == 0 {
+	if r.buf.Len() == len(r.syncHead()) {
 		return
+	}
+	if r.cfg.live() {
+		r.buf.WriteString(syncEnd)
 	}
 	if _, err := r.w.Write(r.buf.Bytes()); err != nil && r.firstErr == nil {
 		r.firstErr = fmt.Errorf("writing build progress: %w", err)
 	}
-	r.buf.Reset()
+	r.resetBuf()
 }
 
 func trimNewline(line []byte) []byte {
