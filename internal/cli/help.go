@@ -12,6 +12,11 @@ import (
 	"github.com/stubbedev/phix/internal/ui"
 )
 
+const (
+	boolFlagValues = "[=true|false]"
+	flagColumnGap  = 3
+)
+
 var (
 	helpHeading = regexp.MustCompile(`^[A-Z][A-Za-z ]*:$`)
 	flagSpecEnd = regexp.MustCompile(`\S {2,}`)
@@ -128,18 +133,31 @@ func commandSections(w *bufio.Writer, st ui.Style, c *cobra.Command) {
 }
 
 func flagUsages(st ui.Style, usages string) string {
-	lines := strings.Split(strings.TrimRight(usages, " \t\n"), "\n")
-	for i, line := range lines {
+	type row struct{ spec, desc string }
+	var rows []row
+	width := 0
+	for line := range strings.SplitSeq(strings.TrimRight(usages, " \t\n"), "\n") {
 		trimmed := strings.TrimLeft(line, " ")
 		if !strings.HasPrefix(trimmed, "-") {
+			rows = append(rows, row{desc: strings.TrimSpace(line)})
 			continue
 		}
-		indent := line[:len(line)-len(trimmed)]
-		end := len(trimmed)
-		if loc := flagSpecEnd.FindStringIndex(trimmed); loc != nil {
-			end = loc[0] + 1
+		spec, desc := line, ""
+		if loc := flagSpecEnd.FindStringIndex(line); loc != nil {
+			spec, desc = line[:loc[0]+1], strings.TrimLeft(line[loc[0]+1:], " ")
 		}
-		lines[i] = indent + st.Paint(trimmed[:end], ui.Bold, ui.Red) + trimmed[end:]
+		spec = strings.Replace(spec, boolFlagValues, "", 1)
+		width = max(width, len(spec))
+		rows = append(rows, row{spec: spec, desc: desc})
+	}
+	lines := make([]string, len(rows))
+	for i, r := range rows {
+		if r.spec == "" {
+			lines[i] = strings.Repeat(" ", width+flagColumnGap) + r.desc
+			continue
+		}
+		indent := len(r.spec) - len(strings.TrimLeft(r.spec, " "))
+		lines[i] = strings.TrimRight(r.spec[:indent]+st.Paint(r.spec[indent:], ui.Bold, ui.Red)+strings.Repeat(" ", width-len(r.spec)+flagColumnGap)+r.desc, " ")
 	}
 	return strings.Join(lines, "\n")
 }

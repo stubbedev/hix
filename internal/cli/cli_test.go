@@ -178,6 +178,34 @@ func TestHelp(t *testing.T) {
 	}
 }
 
+func TestFlagHelpIsAlignedWithoutBoolValueNoise(t *testing.T) {
+	h := newHarness(t)
+	out := h.mustRun("", "switch", "--help")
+	if strings.Contains(out, "[=true|false]") {
+		t.Fatalf("switch --help shows pflag's boolean value hint:\n%s", out)
+	}
+	section := out[strings.Index(out, "Flags:"):strings.Index(out, "Global Flags:")]
+	column := -1
+	for line := range strings.Lines(section) {
+		trimmed := strings.TrimLeft(line, " ")
+		if !strings.HasPrefix(trimmed, "-") {
+			continue
+		}
+		spec := strings.Index(line, trimmed)
+		desc := spec + strings.Index(line[spec:], "   ")
+		desc += len(line[desc:]) - len(strings.TrimLeft(line[desc:], " "))
+		if column == -1 {
+			column = desc
+		}
+		if desc != column {
+			t.Fatalf("flag descriptions start at column %d and %d:\n%s", column, desc, section)
+		}
+	}
+	if column == -1 {
+		t.Fatalf("no flags in switch --help:\n%s", out)
+	}
+}
+
 func TestColoredOutput(t *testing.T) {
 	h := newHarness(t)
 	colored := Terminal{Stdout: ui.NewStyle(true, nil), Stderr: ui.NewStyle(true, nil)}
