@@ -15,10 +15,11 @@ import (
 )
 
 const (
+	Name           = "hix"
 	configFile     = "config.yaml"
-	EnvConfig      = "HM_CONFIG"
-	EnvFlakeDir    = "HM_FLAKE_DIR"
-	EnvNixOSConfig = "HM_NIXOS_CONFIG"
+	EnvConfig      = "HIX_CONFIG"
+	EnvFlakeDir    = "HIX_FLAKE_DIR"
+	EnvNixOSConfig = "HIX_NIXOS_CONFIG"
 )
 
 type Platform int
@@ -138,23 +139,23 @@ func DefaultPath(getenv func(string) string) (string, error) {
 		return p, nil
 	}
 	if x := getenv("XDG_CONFIG_HOME"); x != "" {
-		return filepath.Join(x, "hm", configFile), nil
+		return filepath.Join(x, Name, configFile), nil
 	}
 	home := getenv("HOME")
 	if home == "" {
-		return "", errors.New("locating the hm config: none of HM_CONFIG, XDG_CONFIG_HOME or HOME is set")
+		return "", errors.New("locating the hix config: none of HIX_CONFIG, XDG_CONFIG_HOME or HOME is set")
 	}
-	return filepath.Join(home, ".config", "hm", configFile), nil
+	return filepath.Join(home, ".config", Name, configFile), nil
 }
 
 func Load(path string, getenv func(string) string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return Config{}, fmt.Errorf("reading hm config: %w", err)
+		return Config{}, fmt.Errorf("reading hix config: %w", err)
 	}
 	cfg, err := Parse(data, getenv)
 	if err != nil {
-		return Config{}, fmt.Errorf("parsing hm config %s: %w", path, err)
+		return Config{}, fmt.Errorf("parsing hix config %s: %w", path, err)
 	}
 	flake, err := resolveDir(cfg.Flake)
 	if err != nil {

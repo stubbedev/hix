@@ -1,6 +1,7 @@
 package atomicfile
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -8,15 +9,18 @@ import (
 	"path/filepath"
 )
 
-func Replace(path string, perm fs.FileMode, fill func(io.Writer) error) error {
+func Replace(path string, perm fs.FileMode, fill func(io.Writer) error) (err error) {
 	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".new-*")
 	if err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	committed := false
 	defer func() {
-		if !committed {
-			os.Remove(tmp.Name())
+		if committed {
+			return
+		}
+		if removeErr := os.Remove(tmp.Name()); removeErr != nil {
+			err = errors.Join(err, fmt.Errorf("removing %s: %w", tmp.Name(), removeErr))
 		}
 	}()
 	fillErr := fill(tmp)

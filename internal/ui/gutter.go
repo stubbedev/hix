@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
+	"github.com/stubbedev/hix/internal/proc"
 )
 
 type LineFormat func(st Style, line string) (string, bool)

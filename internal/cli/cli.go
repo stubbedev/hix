@@ -12,11 +12,11 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/config"
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/rebuild"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
-	"github.com/stubbedev/dotfiles/src/hm/internal/usage"
+	"github.com/stubbedev/hix/internal/config"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/rebuild"
+	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/hix/internal/usage"
 )
 
 const (
@@ -91,8 +91,7 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	if err == nil {
 		return 0
 	}
-	var silent *silentExit
-	if errors.As(err, &silent) {
+	if silent, ok := errors.AsType[*silentExit](err); ok {
 		return silent.code
 	}
 	if errors.Is(err, rebuild.ErrDeclined) {
@@ -143,22 +142,22 @@ func (a *App) runtime() (rebuild.Runtime, error) {
 
 func (a *App) root() (*cobra.Command, error) {
 	root := &cobra.Command{
-		Use:   "hm",
+		Use:   config.Name,
 		Short: "Build, activate and maintain this machine's flake configuration",
-		Long: `hm builds and activates this machine's configuration from the flake checkout,
+		Long: `hix builds and activates this machine's configuration from the flake checkout,
 and maintains the flake: input updates, sops secrets and age recipients.
 
 Rebuilds evaluate and build as you with nix build, show the closure diff
 against the running generation, and only activation runs as root.
 
 Environment:
-  HM_CONFIG        config file (default: $XDG_CONFIG_HOME/hm/config.yaml)
-  HM_FLAKE_DIR     flake directory, overriding the config
-  HM_NIXOS_CONFIG  nixosConfigurations attribute, overriding the config
-                   (--attr overrides both)
-  NO_COLOR         disable colored output
-  FORCE_COLOR      color output even when it is not a terminal
-  NERD_FONTS       1 or 0 to force Nerd Font icons on or off in the build view`,
+  HIX_CONFIG        config file (default: $XDG_CONFIG_HOME/hix/config.yaml)
+  HIX_FLAKE_DIR     flake directory, overriding the config
+  HIX_NIXOS_CONFIG  nixosConfigurations attribute, overriding the config
+                    (--attr overrides both)
+  NO_COLOR          disable colored output
+  FORCE_COLOR       color output even when it is not a terminal
+  NERD_FONTS        1 or 0 to force Nerd Font icons on or off in the build view`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          a.rejectUnknown,
@@ -174,7 +173,7 @@ Environment:
 	root.SetOut(a.console.Stdout)
 	root.SetErr(a.console.Stderr)
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return usage.Wrap(err) })
-	root.PersistentFlags().StringVar(&a.attr, "attr", "", "configuration attribute to build, overriding the config and HM_NIXOS_CONFIG")
+	root.PersistentFlags().StringVar(&a.attr, "attr", "", "configuration attribute to build, overriding the config and HIX_NIXOS_CONFIG")
 	if err := root.RegisterFlagCompletionFunc("attr", a.completeHostAttrs); err != nil {
 		return nil, fmt.Errorf("registering --attr completion: %w", err)
 	}
@@ -227,9 +226,9 @@ func (a *App) rejectUnknown(_ *cobra.Command, args []string) error {
 		return nil
 	}
 	if a.cfgErr != nil {
-		return usage.Errorf("unknown command %q; try 'hm help' (extra commands unavailable: %v)", args[0], a.cfgErr)
+		return usage.Errorf("unknown command %q; try 'hix help' (extra commands unavailable: %v)", args[0], a.cfgErr)
 	}
-	return usage.Errorf("unknown command %q; try 'hm help'", args[0])
+	return usage.Errorf("unknown command %q; try 'hix help'", args[0])
 }
 
 func noArgs(cmd *cobra.Command, args []string) error {

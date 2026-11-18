@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 func git(t *testing.T, dir string, args ...string) string {

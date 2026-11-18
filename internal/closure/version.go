@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/storepath"
+	"github.com/stubbedev/hix/internal/storepath"
 )
 
 const separators = ".-_+*=× "

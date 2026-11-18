@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/closure"
-	"github.com/stubbedev/dotfiles/src/hm/internal/config"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/closure"
+	"github.com/stubbedev/hix/internal/config"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 const DateLayout = "2006-01-02 15:04:05Z"

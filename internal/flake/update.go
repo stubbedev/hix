@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 const (
@@ -108,7 +108,7 @@ func (r Repo) rebaseInProgress(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("locating rebase state in %s: %w", r.Dir, err)
 	}
-	for _, p := range strings.Fields(string(out)) {
+	for p := range strings.FieldsSeq(string(out)) {
 		if !filepath.IsAbs(p) {
 			p = filepath.Join(r.Dir, p)
 		}

@@ -14,10 +14,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/atomicfile"
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
-	"github.com/stubbedev/dotfiles/src/hm/internal/usage"
+	"github.com/stubbedev/hix/internal/atomicfile"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/hix/internal/usage"
 )
 
 const (
@@ -182,7 +182,7 @@ func ParseTrustArgs(args []string, stdin io.Reader, stdinTTY bool) (TrustRequest
 		return TrustRequest{Pubkey: args[0]}, nil
 	case 0:
 		if stdinTTY {
-			return TrustRequest{}, usage.Errorf("trust needs a pubkey: hm trust [name] <pubkey>, or pipe '<name> <pubkey>' in (e.g. ssh other hm whoami | hm trust)")
+			return TrustRequest{}, usage.Errorf("trust needs a pubkey: hix trust [name] <pubkey>, or pipe '<name> <pubkey>' in (e.g. ssh other hix whoami | hix trust)")
 		}
 	default:
 		return TrustRequest{}, usage.Errorf("trust takes at most two arguments, got %d", len(args))

@@ -10,9 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/config"
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/config"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 func TestVerbNames(t *testing.T) {
@@ -294,7 +293,7 @@ func TestConfirm(t *testing.T) {
 }
 
 func TestBuildTimes(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "hm", buildTimesFile)
+	path := filepath.Join(t.TempDir(), "hix", buildTimesFile)
 	if got, err := loadBuildTimes(path); err != nil || len(got) != 0 {
 		t.Fatalf("missing cache = %v, %v", got, err)
 	}
@@ -336,7 +335,7 @@ func TestDiffModes(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "never-built")
 	run := func(mode DiffMode) (string, error) {
 		var out bytes.Buffer
-		c := ui.Console{Streams: proc.Streams{Stdout: &out, Stderr: &out}}
+		c := ui.Console{Stdout: &out, Stderr: &out}
 		err := diffClosures(t.Context(), c, current, missing, DiffOptions{Mode: mode})
 		return out.String(), err
 	}
@@ -397,7 +396,7 @@ func TestActivationFormat(t *testing.T) {
 func TestDoneMessages(t *testing.T) {
 	profile := generationsFixture(t)
 	var out bytes.Buffer
-	c := ui.Console{Streams: proc.Streams{Stderr: &out}}
+	c := ui.Console{Stderr: &out}
 	for _, v := range []Verb{Switch, Boot, Test, DryActivate} {
 		if err := printActivated(c, v, profile); err != nil {
 			t.Fatal(err)

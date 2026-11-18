@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/elevate"
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/elevate"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 const (

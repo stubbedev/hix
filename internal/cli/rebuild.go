@@ -11,15 +11,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/closure"
-	"github.com/stubbedev/dotfiles/src/hm/internal/config"
-	"github.com/stubbedev/dotfiles/src/hm/internal/elevate"
-	"github.com/stubbedev/dotfiles/src/hm/internal/flake"
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/rebuild"
-	"github.com/stubbedev/dotfiles/src/hm/internal/sops"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
-	"github.com/stubbedev/dotfiles/src/hm/internal/usage"
+	"github.com/stubbedev/hix/internal/closure"
+	"github.com/stubbedev/hix/internal/config"
+	"github.com/stubbedev/hix/internal/elevate"
+	"github.com/stubbedev/hix/internal/flake"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/rebuild"
+	"github.com/stubbedev/hix/internal/sops"
+	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/hix/internal/usage"
 )
 
 func verbSummary(v rebuild.Verb) string {
@@ -166,16 +166,15 @@ func (a *App) rebuildAndHook(ctx context.Context, rt rebuild.Runtime, v rebuild.
 func (a *App) runHook(ctx context.Context, rt rebuild.Runtime, hook config.Hook, generation string, verbose bool) error {
 	log := rt.Console.Log()
 	log.StepWith(log.Style.Icons().Hook, "%s", hook.Description)
-	env := []string{"HM_FLAKE=" + rt.Config.Flake}
+	env := []string{"HIX_FLAKE=" + rt.Config.Flake}
 	for _, v := range hook.Env {
 		env = append(env, v.Name+"="+v.Value)
 	}
 	store := a.store(rt.Config)
 	for _, v := range hook.SecretEnv {
 		value, err := store.Decrypt(ctx, v.Value)
-		var missing *sops.MissingSecretError
-		if errors.As(err, &missing) {
-			log.Warn("skipped: %v, run %s", missing, log.Style.Paint("hm secret set "+missing.Name, ui.Cyan))
+		if missing, ok := errors.AsType[*sops.MissingSecretError](err); ok {
+			log.Warn("skipped: %v, run %s", missing, log.Style.Paint("hix secret set "+missing.Name, ui.Cyan))
 			return nil
 		}
 		if err != nil {
@@ -276,9 +275,9 @@ func (a *App) diffCmd() *cobra.Command {
 		Short: "Show the package changes between two generations or store paths",
 		Long: `Show the package changes between two generations or store paths.
 
-  hm diff               the previous generation against the current one
-  hm diff <old>         <old> against the current generation
-  hm diff <old> <new>   <old> against <new>
+  hix diff               the previous generation against the current one
+  hix diff <old>         <old> against the current generation
+  hix diff <old> <new>   <old> against <new>
 
 A number names a generation of this machine's profile; anything else is
 taken as a store path or a link to one, such as ./result.`,

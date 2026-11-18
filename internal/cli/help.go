@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 var (
@@ -45,7 +45,7 @@ func writeHelp(w io.Writer, st ui.Style, c *cobra.Command) error {
 		text = c.Short
 	}
 	if text = strings.TrimRight(text, " \t\n"); text != "" {
-		for _, line := range strings.Split(text, "\n") {
+		for line := range strings.SplitSeq(text, "\n") {
 			if helpHeading.MatchString(line) {
 				line = heading(st, line)
 			}

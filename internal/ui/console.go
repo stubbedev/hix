@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
+	"github.com/stubbedev/hix/internal/proc"
 )
 
 type Size struct {

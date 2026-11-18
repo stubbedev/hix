@@ -13,11 +13,11 @@ import (
 	"github.com/spf13/cobra"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/config"
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/rebuild"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
-	"github.com/stubbedev/dotfiles/src/hm/internal/usage"
+	"github.com/stubbedev/hix/internal/config"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/rebuild"
+	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/hix/internal/usage"
 )
 
 var sopsFixture = mustAbs(filepath.Join("..", "sops", "testdata", "sops.yaml"))
@@ -90,8 +90,8 @@ func newHarnessWith(t *testing.T, postSwitch []map[string]any, commands ...map[s
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", h.home)
-	t.Setenv("HM_CONFIG", cfgPath)
-	t.Setenv("HM_FLAKE_DIR", link)
+	t.Setenv("HIX_CONFIG", cfgPath)
+	t.Setenv("HIX_FLAKE_DIR", link)
 	t.Setenv("SOPS_AGE_KEY_FILE", "")
 	t.Chdir(filepath.Join(dir, "elsewhere"))
 	return h
@@ -109,7 +109,7 @@ func (h *harness) mustRun(stdin string, args ...string) string {
 	h.t.Helper()
 	out, errOut, code := h.run(stdin, args...)
 	if code != 0 {
-		h.t.Fatalf("hm %v exited %d\nstdout: %s\nstderr: %s", args, code, out, errOut)
+		h.t.Fatalf("hix %v exited %d\nstdout: %s\nstderr: %s", args, code, out, errOut)
 	}
 	return out
 }
@@ -155,7 +155,7 @@ func command(t *testing.T, name string, args ...string) string {
 func TestHelp(t *testing.T) {
 	h := newHarness(t)
 	out := h.mustRun("", "help")
-	for _, want := range []string{"Usage:", "Rebuild:", "Maintenance:", "switch", "dry-activate", "trust", "secret", "HM_FLAKE_DIR"} {
+	for _, want := range []string{"Usage:", "Rebuild:", "Maintenance:", "switch", "dry-activate", "trust", "secret", "HIX_FLAKE_DIR"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help lacks %q:\n%s", want, out)
 		}
@@ -200,7 +200,7 @@ func TestColoredOutput(t *testing.T) {
 
 	_, errOut, code := run()
 	if code != 2 || !strings.Contains(errOut, "\x1b[1;33mUsage:\x1b[0m") || !strings.Contains(errOut, "\x1b[1;31merror:\x1b[0m no command given") {
-		t.Fatalf("bare hm exited %d with stderr:\n%q", code, errOut)
+		t.Fatalf("bare hix exited %d with stderr:\n%q", code, errOut)
 	}
 }
 
@@ -226,28 +226,28 @@ func TestUsageErrorsExitTwo(t *testing.T) {
 	}
 	for _, args := range cases {
 		if _, errOut, code := h.run("", args...); code != 2 {
-			t.Errorf("hm %v exited %d, want 2; stderr: %s", args, code, errOut)
+			t.Errorf("hix %v exited %d, want 2; stderr: %s", args, code, errOut)
 		}
 	}
 }
 
 func TestMissingConfig(t *testing.T) {
 	newHarness(t)
-	t.Setenv("HM_CONFIG", filepath.Join(t.TempDir(), "missing.json"))
+	t.Setenv("HIX_CONFIG", filepath.Join(t.TempDir(), "missing.json"))
 	var out, errOut bytes.Buffer
 	code := New(proc.Streams{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut}, Terminal{}).Run(context.Background(), []string{"switch"})
 	if code != 1 || !strings.Contains(errOut.String(), "missing.json") {
 		t.Fatalf("exit %d, stderr %q", code, errOut.String())
 	}
 	code = New(proc.Streams{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut}, Terminal{}).Run(context.Background(), []string{"completion", "zsh"})
-	if code != 0 || !strings.HasPrefix(out.String(), "#compdef hm") {
+	if code != 0 || !strings.HasPrefix(out.String(), "#compdef hix") {
 		t.Fatalf("completion without a config: exit %d, output %q", code, out.String())
 	}
 }
 
 func TestExternalCommands(t *testing.T) {
 	dir := t.TempDir()
-	script := filepath.Join(dir, "hm-echo")
+	script := filepath.Join(dir, "hix-echo")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho \"args:$*\"\nexit \"${EXIT:-0}\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +265,7 @@ func TestExternalCommands(t *testing.T) {
 		t.Fatalf("completion lacks the external choices:\n%s", out)
 	}
 	t.Setenv("EXIT", "7")
-	if _, errOut, code := h.run("", "echo"); code != 7 || strings.Contains(errOut, "hm:") {
+	if _, errOut, code := h.run("", "echo"); code != 7 || strings.Contains(errOut, "hix:") {
 		t.Fatalf("external failure: exit %d, stderr %q", code, errOut)
 	}
 }
@@ -311,7 +311,7 @@ func TestTrustAndSecrets(t *testing.T) {
 		t.Fatalf("trust labelled %s as %q", first, comments[first])
 	}
 	if !strings.Contains(out, `git -C "`+h.flake+`" diff`) {
-		t.Fatalf("HM_FLAKE_DIR not resolved to %s:\n%s", h.flake, out)
+		t.Fatalf("HIX_FLAKE_DIR not resolved to %s:\n%s", h.flake, out)
 	}
 	if !strings.Contains(out, "\n✔ Trusted first across 0 secret file(s)\n  Review:") {
 		t.Fatalf("trust summary misformatted:\n%s", out)
@@ -487,7 +487,7 @@ func TestCompletion(t *testing.T) {
 	}
 	for _, shell := range []string{"zsh", "bash", "fish"} {
 		if out := h.mustRun("", "completion", shell); !strings.Contains(out, "__complete") {
-			t.Errorf("%s completion script does not call back into hm", shell)
+			t.Errorf("%s completion script does not call back into hix", shell)
 		}
 	}
 
@@ -544,7 +544,7 @@ func TestPostSwitchHook(t *testing.T) {
 	dir := t.TempDir()
 	record := filepath.Join(dir, "record")
 	script := filepath.Join(dir, "hook")
-	body := "#!/bin/sh\nprintf '%s\\n' \"$*\" \"$HM_FLAKE\" \"$PUSH_URL\" > " + record + "\necho pushing quietly\n"
+	body := "#!/bin/sh\nprintf '%s\\n' \"$*\" \"$HIX_FLAKE\" \"$PUSH_URL\" > " + record + "\necho pushing quietly\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +579,7 @@ func TestPostSwitchHook(t *testing.T) {
 	if err := app.runHook(t.Context(), rt, rt.Config.PostSwitch[1], "/nix/store/gen", false); err != nil {
 		t.Fatal(err)
 	}
-	if want := "> Needs a token\n! skipped: secrets/push-token is missing, run hm secret set push-token\n"; errOut.String() != want {
+	if want := "> Needs a token\n! skipped: secrets/push-token is missing, run hix secret set push-token\n"; errOut.String() != want {
 		t.Fatalf("missing secret: %q, want %q", errOut.String(), want)
 	}
 	if _, err := os.Stat(record); err == nil {

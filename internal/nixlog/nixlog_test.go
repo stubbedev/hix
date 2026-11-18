@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 var epoch = time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
@@ -117,8 +117,8 @@ func TestLiveFetch(t *testing.T) {
 	if !strings.Contains(out, ic.With(ic.Done, "Finished in 0s: fetched 1")+"\n") {
 		t.Fatalf("no final summary:\n%q", out)
 	}
-	for _, segment := range strings.Split(out, "\n") {
-		for _, line := range strings.Split(segment, clearToEnd) {
+	for segment := range strings.SplitSeq(out, "\n") {
+		for line := range strings.SplitSeq(segment, clearToEnd) {
 			if ui.Width(line) >= width {
 				t.Fatalf("frame line not narrower than the terminal: %q", line)
 			}

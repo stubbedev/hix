@@ -79,7 +79,7 @@ func TestParseEnvOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.Attr != "desktop" {
-		t.Fatalf("HM_NIXOS_CONFIG applied on Android: %q", cfg.Attr)
+		t.Fatalf("HIX_NIXOS_CONFIG applied on Android: %q", cfg.Attr)
 	}
 }
 
@@ -142,8 +142,8 @@ func TestDefaultPath(t *testing.T) {
 		want string
 	}{
 		{map[string]string{EnvConfig: "/x.yaml", "HOME": "/h"}, "/x.yaml"},
-		{map[string]string{"XDG_CONFIG_HOME": "/xdg", "HOME": "/h"}, "/xdg/hm/config.yaml"},
-		{map[string]string{"HOME": "/h"}, "/h/.config/hm/config.yaml"},
+		{map[string]string{"XDG_CONFIG_HOME": "/xdg", "HOME": "/h"}, "/xdg/hix/config.yaml"},
+		{map[string]string{"HOME": "/h"}, "/h/.config/hix/config.yaml"},
 	}
 	for _, c := range cases {
 		got, err := DefaultPath(env(c.vars))

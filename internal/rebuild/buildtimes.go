@@ -11,7 +11,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/atomicfile"
+	"github.com/stubbedev/hix/internal/atomicfile"
+	"github.com/stubbedev/hix/internal/config"
 )
 
 const (
@@ -24,7 +25,7 @@ func buildTimesPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("locating the build time cache: %w", err)
 	}
-	return filepath.Join(dir, "hm", buildTimesFile), nil
+	return filepath.Join(dir, config.Name, buildTimesFile), nil
 }
 
 func loadBuildTimes(path string) (map[string]time.Duration, error) {
@@ -65,7 +66,7 @@ func saveBuildTimes(path string, times map[string]time.Duration) error {
 	for name, d := range times {
 		seconds[name] = d.Round(time.Second).Seconds()
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("creating the build time cache directory: %w", err)
 	}
 	return atomicfile.Replace(path, 0o644, func(w io.Writer) error {

@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/cli"
+	"github.com/stubbedev/hix/internal/cli"
 )
 
 func main() {

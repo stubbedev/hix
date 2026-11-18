@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 const (

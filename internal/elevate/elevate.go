@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 const refreshInterval = 50 * time.Second

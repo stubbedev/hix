@@ -15,12 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/closure"
-	"github.com/stubbedev/dotfiles/src/hm/internal/config"
-	"github.com/stubbedev/dotfiles/src/hm/internal/elevate"
-	"github.com/stubbedev/dotfiles/src/hm/internal/nixlog"
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
+	"github.com/stubbedev/hix/internal/closure"
+	"github.com/stubbedev/hix/internal/config"
+	"github.com/stubbedev/hix/internal/elevate"
+	"github.com/stubbedev/hix/internal/nixlog"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/ui"
 )
 
 const (
@@ -258,8 +258,7 @@ func nixBuild(ctx context.Context, rt Runtime, spec buildSpec) (string, error) {
 	logWriter.Close()
 	renderErr := <-rendered
 	saveEstimates(rt.Console.Log(), cache, known, renderer.Measured())
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		return "", fmt.Errorf("nix build failed: %w", exitErr)
 	}
 	if err != nil {
@@ -401,9 +400,9 @@ func HostAttrs(ctx context.Context, cfg config.Config) ([]string, error) {
 }
 
 func Repl(ctx context.Context, rt Runtime, extra []string) error {
-	attr := fmt.Sprintf("nixosConfigurations.%s", rt.Config.Attr)
+	attr := "nixosConfigurations." + rt.Config.Attr
 	if rt.Config.Platform == config.Android {
-		attr = fmt.Sprintf("nixOnDroidConfigurations.%s", rt.Config.Attr)
+		attr = "nixOnDroidConfigurations." + rt.Config.Attr
 	}
 	argv := append([]string{"nix"}, nixFlakeFlags...)
 	argv = append(argv, "repl", rt.Config.FlakeRef()+"#"+attr)

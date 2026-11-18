@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
+	"github.com/stubbedev/hix/internal/proc"
 )
 
 func TestPaint(t *testing.T) {
@@ -136,7 +136,7 @@ func TestGutter(t *testing.T) {
 
 func TestRunIndentedShowsHiddenOutputOnFailure(t *testing.T) {
 	var out bytes.Buffer
-	c := Console{Streams: proc.Streams{Stderr: &out}}
+	c := Console{Stderr: &out}
 	err := c.RunIndented(context.Background(), proc.Cmd{Argv: []string{"sh", "-c", "echo routine; echo warning: w; exit 3"}}, Notable)
 	if code, ok := proc.ExitCode(err); !ok || code != 3 {
 		t.Fatalf("err = %v", err)

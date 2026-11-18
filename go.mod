@@ -1,6 +1,8 @@
-module github.com/stubbedev/dotfiles/src/hm
+module github.com/stubbedev/hix
 
-go 1.26.0
+go 1.27.1
+
+toolchain go1.27.4
 
 require (
 	github.com/spf13/cobra v1.10.2

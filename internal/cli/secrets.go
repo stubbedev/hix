@@ -13,10 +13,10 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/config"
-	"github.com/stubbedev/dotfiles/src/hm/internal/sops"
-	"github.com/stubbedev/dotfiles/src/hm/internal/ui"
-	"github.com/stubbedev/dotfiles/src/hm/internal/usage"
+	"github.com/stubbedev/hix/internal/config"
+	"github.com/stubbedev/hix/internal/sops"
+	"github.com/stubbedev/hix/internal/ui"
+	"github.com/stubbedev/hix/internal/usage"
 )
 
 func (a *App) store(cfg config.Config) sops.Store {
@@ -64,9 +64,9 @@ func (a *App) trustCmd() *cobra.Command {
 		Short: "Add an age recipient to .sops.yaml and re-wrap secrets/*",
 		Long: `Add an age recipient to .sops.yaml and re-wrap every file under secrets/.
 
-  hm trust <name> <pubkey>
-  hm trust <pubkey>           name it after this host if the key is ours, else the key's last 8 characters
-  cmd | hm trust              read "<name> <pubkey>" from stdin, e.g. ssh other hm whoami | hm trust`,
+  hix trust <name> <pubkey>
+  hix trust <pubkey>           name it after this host if the key is ours, else the key's last 8 characters
+  cmd | hix trust              read "<name> <pubkey>" from stdin, e.g. ssh other hix whoami | hix trust`,
 		GroupID:           groupMaintain,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -129,7 +129,7 @@ func (a *App) secretCmd() *cobra.Command {
 			if err := s.Set(cmd.Context(), path, value); err != nil {
 				return err
 			}
-			a.console.Out().Done("Updated secrets/%s. Run %s to deploy, then commit.", filepath.Base(path), a.console.OutStyle.Paint("hm switch", ui.Cyan))
+			a.console.Out().Done("Updated secrets/%s. Run %s to deploy, then commit.", filepath.Base(path), a.console.OutStyle.Paint("hix switch", ui.Cyan))
 			return nil
 		}),
 		a.secretAction("rotate", "Re-roll the data key of secrets/<name>, recipients unchanged", func(cmd *cobra.Command, s sops.Store, path string) error {

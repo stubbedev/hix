@@ -1,14 +1,14 @@
 package cli
 
 import (
-	"fmt"
 	"slices"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
-	"github.com/stubbedev/dotfiles/src/hm/internal/config"
-	"github.com/stubbedev/dotfiles/src/hm/internal/proc"
-	"github.com/stubbedev/dotfiles/src/hm/internal/rebuild"
+	"github.com/stubbedev/hix/internal/config"
+	"github.com/stubbedev/hix/internal/proc"
+	"github.com/stubbedev/hix/internal/rebuild"
 )
 
 func (a *App) completeSecretNames(_ *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
@@ -38,7 +38,7 @@ func (a *App) generationCompletions(maxArgs int, skip func(rebuild.Generation) b
 			if skip(g) {
 				continue
 			}
-			out = append(out, cobra.CompletionWithDesc(fmt.Sprint(g.ID), g.Date.Format(rebuild.DateLayout)))
+			out = append(out, cobra.CompletionWithDesc(strconv.Itoa(g.ID), g.Date.Format(rebuild.DateLayout)))
 		}
 		return out, cobra.ShellCompDirectiveNoFileComp | cobra.ShellCompDirectiveKeepOrder
 	}
