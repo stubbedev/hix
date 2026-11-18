@@ -34,7 +34,7 @@ jobs:
 
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
 
-      - uses: stubbedev/xilo@b48c60917a4472a527f463995ad62e9ea0addf18 # v2.0.0
+      - uses: stubbedev/xilo@v2
         with:
           url: https://xilos.dev
           cache: stubbedev/main
