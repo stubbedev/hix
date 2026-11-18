@@ -114,7 +114,7 @@ func TestLiveFetch(t *testing.T) {
 		t.Fatalf("live output does not hide and restore the cursor:\n%q", out)
 	}
 	ic := ui.Unicode
-	if !strings.Contains(out, ic.With(ic.Done, "Finished in 0s: fetched 1")+"\n") {
+	if !strings.Contains(out, ic.With(ic.Done, "Finished in 0s: fetched 1")+clearLine+"\n") {
 		t.Fatalf("no final summary:\n%q", out)
 	}
 	for segment := range strings.SplitSeq(out, "\n") {
@@ -189,16 +189,22 @@ func TestLiveFrameDrawsWhileStreaming(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
-	out.waitFor(t, clearToEnd+ic.With(ic.Done, "Finished in"))
+	summary := ic.With(ic.Done, "Finished in")
+	out.waitFor(t, summary)
+	final := out.buf.String()
+	final = final[strings.LastIndex(final, syncStart):]
+	if !strings.HasPrefix(final, syncStart+"\r") || strings.Index(final, clearToEnd) < strings.Index(final, summary) {
+		t.Fatalf("frame wiped before the summary replaced it: %q", final)
+	}
 }
 
 func TestLiveFailure(t *testing.T) {
 	out := render(t, "fail.jsonl", Config{Width: 80, Height: 20})
 	ic := ui.Unicode
-	want := ic.With(ic.Failed, "1 failed build(s) after 0s") + "\n" +
-		"╰─ " + ic.With(ic.Failed, "hm-fail-1794938919") + ": builder failed with exit code 3\n" +
-		"   │ about to fail\n" +
-		"   full log: nix log /nix/store/difkgyrh68ns4bwylg87b52621cjvg5j-hm-fail-1794938919.drv\n"
+	want := ic.With(ic.Failed, "1 failed build(s) after 0s") + clearLine + "\n" +
+		"╰─ " + ic.With(ic.Failed, "hm-fail-1794938919") + ": builder failed with exit code 3" + clearLine + "\n" +
+		"   │ about to fail" + clearLine + "\n" +
+		"   full log: nix log /nix/store/difkgyrh68ns4bwylg87b52621cjvg5j-hm-fail-1794938919.drv" + clearLine + "\n"
 	if !strings.Contains(out, want) {
 		t.Fatalf("failure not grouped:\n%s\nwant:\n%s", out, want)
 	}

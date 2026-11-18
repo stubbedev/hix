@@ -139,11 +139,11 @@ func (r *Renderer) consumeLive(in io.Reader) error {
 		r.flush()
 	}
 	r.rewind()
-	r.buf.WriteString(clearToEnd)
 	for _, line := range r.state.Summary(r.cfg.Style, r.cfg.Now()) {
-		r.buf.WriteString(line + "\n")
+		r.overwrite(line)
+		r.buf.WriteByte('\n')
 	}
-	r.buf.WriteString(showCursor)
+	r.buf.WriteString(clearToEnd + showCursor)
 	r.flush()
 	return firstError(readErr, r.firstErr)
 }
