@@ -27,21 +27,14 @@ jobs:
           - system: aarch64-darwin
             runner: macos-latest
     runs-on: ${{ matrix.runner }}
-    env:
-      XILO_TOKEN: ${{ secrets.XILO_TOKEN }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-        with:
-          extra-conf: |
-            extra-substituters = https://xilos.dev/c/stubbedev/main
-            extra-trusted-public-keys = xilos.dev/stubbedev/main-1:397R6S49v/FSvP+mZ3HlKrVN1KXhgzHIEIHxA/UuG6Y=
 
-      - uses: stubbedev/xilo@49648b51c7767bf7c06c7161001db77addc2dc4e # v1
-        if: ${{ env.XILO_TOKEN != '' }}
+      - uses: stubbedev/xilo@b48c60917a4472a527f463995ad62e9ea0addf18 # v2.0.0
         with:
           url: https://xilos.dev
           cache: stubbedev/main
@@ -59,6 +52,3 @@ jobs:
           request='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}'
           { printf '%s\n' "$request"; sleep 2; } | "$phix" mcp | grep -q '"name":"phix-mcp"'
 
-      - name: Push to the xilo cache
-        if: ${{ env.XILO_TOKEN != '' && github.event_name != 'pull_request' }}
-        run: xilo push stubbedev/main "$(cat "$RUNNER_TEMP/outpaths")"
