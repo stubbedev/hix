@@ -82,6 +82,12 @@ reports that it is unavailable rather than returning empty results.
 
 ## Runtime
 
+phix builds for Linux and macOS (`x86_64-linux`, `aarch64-linux`,
+`aarch64-darwin`), and CI builds and tests each one: `nix run
+github:stubbedev/phix -- mcp` or `go install github.com/stubbedev/phix@latest`.
+The rebuild verbs target NixOS and nix-on-droid; `phix mcp` needs no phix
+config and runs on all of them.
+
 phix drives `nix`, `git`, `sops`, `sudo` and `systemd-run`; the package puts
 `sops` on its PATH. Age recipients are derived from the SSH key and validated
 in-process, so `age` and `ssh-to-age` are only needed by the test suite, which

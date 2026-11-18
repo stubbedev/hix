@@ -20,6 +20,7 @@ import (
 	"github.com/stubbedev/phix/internal/runlock"
 	"github.com/stubbedev/phix/internal/ui"
 	"github.com/stubbedev/phix/internal/usage"
+	"github.com/stubbedev/phix/internal/version"
 )
 
 var sopsFixture = mustAbs(filepath.Join("..", "sops", "testdata", "sops.yaml"))
@@ -171,6 +172,9 @@ func TestHelp(t *testing.T) {
 	}
 	if strings.Contains(out, "\x1b[") {
 		t.Errorf("help is colored without a color terminal:\n%q", out)
+	}
+	if out := h.mustRun("", "--version"); out != "phix version "+version.Version+"\n" {
+		t.Errorf("phix --version = %q", out)
 	}
 }
 

@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/stubbedev/phix/internal/version"
 )
 
 const (
@@ -30,7 +32,7 @@ const (
 
 var nixosAuth = [2]string{"aWVSALXpZv", "X8gPHnzL52wFEekuxsfQ9cSh"}
 
-func userAgent() string { return serverName + "/" + version }
+func userAgent() string { return serverName + "/" + version.Version }
 
 var knownSources = map[string]bool{
 	"nixos": true, "home-manager": true, "darwin": true, "flakes": true,

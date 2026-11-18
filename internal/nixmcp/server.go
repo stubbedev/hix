@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/stubbedev/phix/internal/version"
 )
 
 const serverName = "phix-mcp"
-
-var version = "dev"
 
 func logf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "["+serverName+"] "+format+"\n", args...)
@@ -42,7 +42,7 @@ func serverFactory() (func() *mcp.Server, error) {
 	}
 	return func() *mcp.Server {
 		srv := mcp.NewServer(
-			&mcp.Implementation{Name: serverName, Version: version},
+			&mcp.Implementation{Name: serverName, Version: version.Version},
 			&mcp.ServerOptions{Instructions: serverInstructions},
 		)
 		for _, d := range tools {

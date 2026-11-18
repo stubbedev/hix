@@ -18,6 +18,7 @@ import (
 	"github.com/stubbedev/phix/internal/runlock"
 	"github.com/stubbedev/phix/internal/ui"
 	"github.com/stubbedev/phix/internal/usage"
+	"github.com/stubbedev/phix/internal/version"
 )
 
 const (
@@ -159,6 +160,7 @@ Environment:
   NO_COLOR           disable colored output
   FORCE_COLOR        color output even when it is not a terminal
   NERD_FONTS         1 or 0 to force Nerd Font icons on or off in the build view`,
+		Version:       version.Version,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args:          a.rejectUnknown,

@@ -27,7 +27,7 @@
       ldflags = [
         "-s"
         "-w"
-        "-X github.com/stubbedev/phix/internal/nixmcp.version=${finalAttrs.version}"
+        "-X github.com/stubbedev/phix/internal/version.Version=${finalAttrs.version}"
       ];
 
       nativeBuildInputs = [
@@ -67,7 +67,7 @@
         homepage = "https://github.com/stubbedev/phix";
         license = lib.licenses.mit;
         mainProgram = "phix";
-        platforms = lib.platforms.linux;
+        platforms = lib.platforms.unix;
       };
     });
   };
