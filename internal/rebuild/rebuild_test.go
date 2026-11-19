@@ -381,10 +381,10 @@ func TestActivationFormat(t *testing.T) {
 		}
 	}
 	want := "│ ! /root/.nix-defexpr/channels exists, but channels have been disabled.\n" +
-		"│ ✔ bootloader up to date\n" +
-		"│ ↻ restart nixos-activation (user)\n" +
-		"│ ↻ restart sysinit-reactivation.target\n" +
-		"│ ↻ restart home-manager-stubbe, sshd\n" +
+		"│ ✓ bootloader up to date\n" +
+		"│ ◆ restart nixos-activation (user)\n" +
+		"│ ◆ restart sysinit-reactivation.target\n" +
+		"│ ◆ restart home-manager-stubbe, sshd\n" +
 		"│ ■ stop    old\n" +
 		"│ ▸ start   NetworkManager-dispatcher\n" +
 		"│ nixos-rebuild-switch-to-configuration.service: Failed with result 'exit-code'.\n"
@@ -402,7 +402,7 @@ func TestDoneMessages(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	want := "✔ Switched to generation 2\n✔ Generation 2 boots next\n✔ Activated until the next reboot\n✔ Dry activation finished, nothing was changed\n"
+	want := "✓ Switched to generation 2\n✓ Generation 2 boots next\n✓ Activated until the next reboot\n✓ Dry activation finished, nothing was changed\n"
 	if out.String() != want {
 		t.Fatalf("done messages:\n%s\nwant:\n%s", out.String(), want)
 	}

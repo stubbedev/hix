@@ -50,24 +50,32 @@ func Main(args []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	streams := proc.Streams{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
-	return New(streams, detectTerminal(ctx)).Run(ctx, args)
+	terminal, err := detectTerminal(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "phix: %v\n", err)
+		return 2
+	}
+	return New(streams, terminal).Run(ctx, args)
 }
 
-func detectTerminal(ctx context.Context) Terminal {
-	icons := ui.DetectIcons(os.Getenv)
+func detectTerminal(ctx context.Context) (Terminal, error) {
+	icons, err := ui.DetectIcons(os.Getenv)
+	if err != nil {
+		return Terminal{}, err
+	}
 	t := Terminal{
 		StdinTTY: term.IsTerminal(int(os.Stdin.Fd())),
 		Stdout:   ui.NewStyle(ui.DetectColor(os.Stdout, os.Getenv), icons),
 		Stderr:   ui.NewStyle(ui.DetectColor(os.Stderr, os.Getenv), icons),
 	}
 	if os.Getenv("TERM") == "dumb" || !term.IsTerminal(int(os.Stderr.Fd())) {
-		return t
+		return t, nil
 	}
 	if width, height, err := term.GetSize(int(os.Stderr.Fd())); err == nil {
 		t.Screen = ui.Size{Width: width, Height: height}
 		t.Resize = ui.WatchSize(ctx, os.Stderr)
 	}
-	return t
+	return t, nil
 }
 
 func New(streams proc.Streams, terminal Terminal) *App {
@@ -159,7 +167,8 @@ Environment:
                      (--attr overrides both)
   NO_COLOR           disable colored output
   FORCE_COLOR        color output even when it is not a terminal
-  NERD_FONTS         1 or 0 to force Nerd Font icons on or off in the build view`,
+  NERD_FONTS         1 to use Nerd Font icons (needs a Nerd Font); the default
+                     icons render the same in every terminal and font`,
 		Version:       version.Version,
 		SilenceErrors: true,
 		SilenceUsage:  true,

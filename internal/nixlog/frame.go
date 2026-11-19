@@ -156,7 +156,7 @@ func (s *State) tree(st ui.Style, now time.Time) []string {
 		rows = append(rows, connectors(st, b)+s.drvRow(st, s.drvs[path], now))
 		kids := children[path]
 		if chain := s.waitingChain(kids, children); len(chain) > minCollapsedChain {
-			rows = append(rows, connectors(st, b.child(false))+st.Paint(fmt.Sprintf("⋮ %d more", len(chain)-1), ui.Gray))
+			rows = append(rows, connectors(st, b.child(false))+st.Paint(fmt.Sprintf("… %d more", len(chain)-1), ui.Gray))
 			kids = chain[len(chain)-1:]
 		}
 		for i, kid := range kids {

@@ -68,10 +68,11 @@ func TestByteProgress(t *testing.T) {
 	}
 }
 
+func env(vars map[string]string) func(string) string {
+	return func(k string) string { return vars[k] }
+}
+
 func TestDetect(t *testing.T) {
-	env := func(vars map[string]string) func(string) string {
-		return func(k string) string { return vars[k] }
-	}
 	f, err := os.CreateTemp(t.TempDir(), "notatty")
 	if err != nil {
 		t.Fatal(err)
@@ -86,11 +87,47 @@ func TestDetect(t *testing.T) {
 	if DetectColor(f, env(map[string]string{"FORCE_COLOR": "1", "NO_COLOR": "1"})) {
 		t.Fatal("NO_COLOR does not win")
 	}
-	if DetectIcons(env(map[string]string{"TERM": "xterm-ghostty"})) != &Nerd {
-		t.Fatal("ghostty does not get nerd icons")
+}
+
+func TestIconsDoNotDependOnTheTerminal(t *testing.T) {
+	for _, vars := range []map[string]string{
+		nil,
+		{"TERM": "xterm-ghostty", "TERM_PROGRAM": "ghostty"},
+		{"TERM": "xterm-kitty"},
+		{"TERM": "tmux-256color", "TERM_PROGRAM": "tmux"},
+		{"TERM": "alacritty"},
+	} {
+		icons, err := DetectIcons(env(vars))
+		if err != nil || icons != &Unicode {
+			t.Fatalf("%v picked %v (%v), want the portable icons", vars, icons, err)
+		}
 	}
-	if DetectIcons(env(map[string]string{"TERM": "xterm-ghostty", "NERD_FONTS": "0"})) != &Unicode {
-		t.Fatal("NERD_FONTS=0 does not win")
+}
+
+func TestNerdFontsOptsIntoNerdIcons(t *testing.T) {
+	for value, want := range map[string]*Icons{"1": &Nerd, "yes": &Nerd, "0": &Unicode, "no": &Unicode} {
+		icons, err := DetectIcons(env(map[string]string{"NERD_FONTS": value, "TERM": "xterm-ghostty"}))
+		if err != nil || icons != want {
+			t.Fatalf("NERD_FONTS=%s picked %v (%v)", value, icons, err)
+		}
+	}
+	if _, err := DetectIcons(env(map[string]string{"NERD_FONTS": "maybe"})); err == nil {
+		t.Fatal("NERD_FONTS=maybe was accepted")
+	}
+}
+
+func TestPortableIconsAvoidEmojiAndFontGaps(t *testing.T) {
+	portable := map[rune]bool{}
+	for _, r := range "><!■▸▹◆◇✓○✗+−↑↓◔Σ \u00a0" {
+		portable[r] = true
+	}
+	v := reflect.ValueOf(Unicode)
+	for i := range v.NumField() {
+		for _, r := range v.Field(i).String() {
+			if !portable[r] {
+				t.Errorf("%s uses %q (U+%04X), which is emoji-capable or missing from common monospace fonts", v.Type().Field(i).Name, r, r)
+			}
+		}
 	}
 }
 
@@ -101,7 +138,7 @@ func TestPrinterAndTable(t *testing.T) {
 	p.Warn("careful")
 	p.Done("ok")
 	p.Error(errors.New("boom"))
-	if want := "> building x\n! careful\n✔ ok\nerror: boom\n"; out.String() != want {
+	if want := "> building x\n! careful\n✓ ok\nerror: boom\n"; out.String() != want {
 		t.Fatalf("printer output %q, want %q", out.String(), want)
 	}
 

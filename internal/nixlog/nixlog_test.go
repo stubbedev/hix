@@ -327,7 +327,7 @@ func TestWaitingChainsCollapse(t *testing.T) {
 	ic := ui.Unicode
 	want := []string{
 		"├─ " + ic.Planned + ic.Gap + "system",
-		"│  ├─ ⋮ 4 more",
+		"│  ├─ … 4 more",
 		"│  ╰─ " + ic.Planned + ic.Gap + "path",
 		"│     ╰─ " + ic.Running + ic.Gap + "leaf  " + ic.With(ic.Clock, "0s"),
 	}

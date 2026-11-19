@@ -1,6 +1,9 @@
 package ui
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type Icons struct {
 	Step     string
@@ -35,20 +38,20 @@ var Unicode = Icons{
 	Hook:     ">",
 	Warn:     "!",
 	Stop:     "■",
-	Restart:  "↻",
-	Reload:   "⟳",
+	Restart:  "◆",
+	Reload:   "◇",
 	Start:    "▸",
-	Running:  "⏵",
-	Done:     "✔",
-	Planned:  "⏸",
+	Running:  "▹",
+	Done:     "✓",
+	Planned:  "○",
 	Failed:   "✗",
 	Added:    "+",
 	Removed:  "−",
 	Updated:  "↑",
 	Download: "↓",
 	Upload:   "↑",
-	Clock:    "⏱",
-	Summary:  "∑",
+	Clock:    "◔",
+	Summary:  "Σ",
 	Gap:      " ",
 }
 
@@ -69,22 +72,15 @@ var Nerd = func() Icons {
 	return i
 }()
 
-func DetectIcons(getenv func(string) string) *Icons {
-	switch strings.ToLower(strings.TrimSpace(getenv("NERD_FONTS"))) {
+func DetectIcons(getenv func(string) string) (*Icons, error) {
+	switch value := getenv("NERD_FONTS"); strings.ToLower(strings.TrimSpace(value)) {
 	case "1", "true", "yes":
-		return &Nerd
-	case "0", "false", "no":
-		return &Unicode
+		return &Nerd, nil
+	case "", "0", "false", "no":
+		return &Unicode, nil
+	default:
+		return nil, fmt.Errorf("NERD_FONTS must be 1 or 0, got %q", value)
 	}
-	switch strings.ToLower(strings.TrimSpace(getenv("TERM_PROGRAM"))) {
-	case "ghostty", "wezterm", "kitty":
-		return &Nerd
-	}
-	switch strings.ToLower(getenv("TERM")) {
-	case "xterm-ghostty", "xterm-kitty":
-		return &Nerd
-	}
-	return &Unicode
 }
 
 func (i *Icons) With(icon, text string) string {

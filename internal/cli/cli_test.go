@@ -429,7 +429,7 @@ func TestTrustAndSecrets(t *testing.T) {
 	if !strings.Contains(out, `git -C "`+h.flake+`" diff`) {
 		t.Fatalf("PHIX_FLAKE_DIR not resolved to %s:\n%s", h.flake, out)
 	}
-	if !strings.Contains(out, "\n✔ Trusted first across 0 secret file(s)\n  Review:") {
+	if !strings.Contains(out, "\n✓ Trusted first across 0 secret file(s)\n  Review:") {
 		t.Fatalf("trust summary misformatted:\n%s", out)
 	}
 
