@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/stubbedev/phix/internal/agekey"
 	"github.com/stubbedev/phix/internal/config"
 	"github.com/stubbedev/phix/internal/sops"
 	"github.com/stubbedev/phix/internal/ui"
@@ -60,13 +61,16 @@ func (a *App) whoamiCmd() *cobra.Command {
 
 func (a *App) trustCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "trust [name] <pubkey>",
-		Short: "Add an age recipient to .sops.yaml and re-wrap secrets/*",
-		Long: `Add an age recipient to .sops.yaml and re-wrap every file under secrets/.
+		Use:   "trust [name] <recipient>",
+		Short: "Add a sops age recipient to .sops.yaml and re-wrap secrets/*",
+		Long: `Add a sops age recipient to .sops.yaml and re-wrap every file under secrets/.
 
-  phix trust <name> <pubkey>
-  phix trust <pubkey>           name it after this host if the key is ours, else the key's last 8 characters
-  cmd | phix trust              read "<name> <pubkey>" from stdin, e.g. ssh other phix whoami | phix trust`,
+A recipient is an age key (age1…), a post-quantum age key (age1pq1…, from
+age-keygen -pq) or an SSH public key (ssh-ed25519 AAAA…, quoted or not).
+
+  phix trust <name> <recipient>
+  phix trust <recipient>        name it after this host if the key is ours, else the key's last 8 characters
+  cmd | phix trust              read "<name> <recipient>" from stdin, e.g. ssh other phix whoami | phix trust`,
 		GroupID:           groupMaintain,
 		ValidArgsFunction: cobra.NoFileCompletions,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -79,7 +83,7 @@ func (a *App) trustCmd() *cobra.Command {
 				return err
 			}
 			if req.Name == "" {
-				if req.Name, err = a.autoName(cfg, req.Pubkey); err != nil {
+				if req.Name, err = a.autoName(cfg, req.Recipient); err != nil {
 					return err
 				}
 			}
@@ -88,20 +92,16 @@ func (a *App) trustCmd() *cobra.Command {
 	}
 }
 
-func (a *App) autoName(cfg config.Config, pubkey string) (string, error) {
+func (a *App) autoName(cfg config.Config, recipient agekey.Recipient) (string, error) {
 	host, err := shortHostname()
 	if err != nil {
 		return "", err
 	}
-	local := ""
-	if _, err := os.Stat(cfg.SSHPublicKey()); err == nil {
-		if local, err = sops.AgePubkey(cfg.SSHPublicKey()); err != nil {
-			return "", err
-		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("checking for %s: %w", cfg.SSHPublicKey(), err)
+	local, err := sops.LocalRecipients(cfg.SSHPublicKey())
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return "", err
 	}
-	return sops.AutoName(pubkey, local, host), nil
+	return sops.AutoName(recipient, local, host), nil
 }
 
 func (a *App) secretCmd() *cobra.Command {

@@ -12,12 +12,15 @@ import (
 
 const (
 	hrp           = "age"
+	pqHRP         = "age1pq"
 	keySize       = 32
+	pqKeySize     = 1184 + keySize
 	sshEd25519    = "ssh-ed25519"
 	bech32Charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
 )
 
 var (
+	keySizes     = map[string]int{hrp: keySize, pqHRP: pqKeySize}
 	fieldPrime   = new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 255), big.NewInt(19))
 	bech32Values = func() map[byte]byte {
 		values := make(map[byte]byte, len(bech32Charset))
@@ -31,39 +34,35 @@ var (
 type Recipient string
 
 func ParseRecipient(s string) (Recipient, error) {
+	if strings.HasPrefix(s, sshEd25519+" ") {
+		blob, _, err := sshEd25519Blob(s)
+		if err != nil {
+			return "", fmt.Errorf("parsing ssh recipient %q: %w", s, err)
+		}
+		return Recipient(sshEd25519 + " " + base64.StdEncoding.EncodeToString(blob)), nil
+	}
 	gotHRP, data, err := bech32Decode(s)
 	if err != nil {
 		return "", fmt.Errorf("parsing age recipient %q: %w", s, err)
 	}
-	if gotHRP != hrp {
-		return "", fmt.Errorf("parsing age recipient %q: prefix %q, want %q", s, gotHRP, hrp)
+	want, ok := keySizes[gotHRP]
+	if !ok {
+		return "", fmt.Errorf("parsing age recipient %q: prefix %q, want %q or %q", s, gotHRP, hrp, pqHRP)
 	}
 	key, err := convertBits(data, 5, 8, false)
 	if err != nil {
 		return "", fmt.Errorf("parsing age recipient %q: %w", s, err)
 	}
-	if len(key) != keySize {
-		return "", fmt.Errorf("parsing age recipient %q: %d-byte key, want %d", s, len(key), keySize)
+	if len(key) != want {
+		return "", fmt.Errorf("parsing age recipient %q: %d-byte key, want %d", s, len(key), want)
 	}
-	return Recipient(s), nil
+	return Recipient(strings.ToLower(s)), nil
 }
 
 func FromSSHPublicKey(authorizedKey []byte) (Recipient, error) {
-	fields := strings.Fields(string(authorizedKey))
-	if len(fields) < 2 || fields[0] != sshEd25519 {
-		return "", fmt.Errorf("not an %s public key", sshEd25519)
-	}
-	blob, err := base64.StdEncoding.DecodeString(fields[1])
+	_, point, err := sshEd25519Blob(string(authorizedKey))
 	if err != nil {
-		return "", fmt.Errorf("decoding the %s key: %w", sshEd25519, err)
-	}
-	keyType, rest, err := sshString(blob)
-	if err != nil || string(keyType) != sshEd25519 {
-		return "", fmt.Errorf("decoding the %s key: malformed key blob", sshEd25519)
-	}
-	point, rest, err := sshString(rest)
-	if err != nil || len(point) != keySize || len(rest) != 0 {
-		return "", fmt.Errorf("decoding the %s key: malformed key blob", sshEd25519)
+		return "", err
 	}
 	u, err := edwardsToMontgomery(point)
 	if err != nil {
@@ -74,6 +73,26 @@ func FromSSHPublicKey(authorizedKey []byte) (Recipient, error) {
 		return "", err
 	}
 	return Recipient(bech32Encode(hrp, data)), nil
+}
+
+func sshEd25519Blob(authorizedKey string) (blob, point []byte, err error) {
+	fields := strings.Fields(authorizedKey)
+	if len(fields) < 2 || fields[0] != sshEd25519 {
+		return nil, nil, fmt.Errorf("not an %s public key", sshEd25519)
+	}
+	blob, err = base64.StdEncoding.DecodeString(fields[1])
+	if err != nil {
+		return nil, nil, fmt.Errorf("decoding the %s key: %w", sshEd25519, err)
+	}
+	keyType, rest, err := sshString(blob)
+	if err != nil || string(keyType) != sshEd25519 {
+		return nil, nil, fmt.Errorf("decoding the %s key: malformed key blob", sshEd25519)
+	}
+	point, rest, err = sshString(rest)
+	if err != nil || len(point) != keySize || len(rest) != 0 {
+		return nil, nil, fmt.Errorf("decoding the %s key: malformed key blob", sshEd25519)
+	}
+	return blob, point, nil
 }
 
 func sshString(b []byte) (value, rest []byte, err error) {

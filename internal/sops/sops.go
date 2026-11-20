@@ -155,7 +155,7 @@ func ParsePipedValue(data []byte) ([]byte, error) {
 	return value, nil
 }
 
-func AgePubkey(sshPublicKey string) (string, error) {
+func AgePubkey(sshPublicKey string) (agekey.Recipient, error) {
 	data, err := os.ReadFile(sshPublicKey)
 	if err != nil {
 		return "", fmt.Errorf("deriving an age pubkey: %w", err)
@@ -164,49 +164,71 @@ func AgePubkey(sshPublicKey string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("deriving an age pubkey from %s: %w", sshPublicKey, err)
 	}
-	return string(recipient), nil
+	return recipient, nil
+}
+
+func LocalRecipients(sshPublicKey string) ([]agekey.Recipient, error) {
+	data, err := os.ReadFile(sshPublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("reading this host's recipients: %w", err)
+	}
+	derived, err := agekey.FromSSHPublicKey(data)
+	if err != nil {
+		return nil, fmt.Errorf("deriving an age pubkey from %s: %w", sshPublicKey, err)
+	}
+	native, err := agekey.ParseRecipient(strings.TrimSpace(string(data)))
+	if err != nil {
+		return nil, fmt.Errorf("reading %s as an ssh recipient: %w", sshPublicKey, err)
+	}
+	return []agekey.Recipient{derived, native}, nil
 }
 
 type TrustRequest struct {
-	Name   string
-	Pubkey string
+	Name      string
+	Recipient agekey.Recipient
 }
 
 func ParseTrustArgs(args []string, stdin io.Reader, stdinTTY bool) (TrustRequest, error) {
-	switch len(args) {
-	case 2:
-		return TrustRequest{Name: args[0], Pubkey: args[1]}, nil
-	case 1:
-		return TrustRequest{Pubkey: args[0]}, nil
-	case 0:
-		if stdinTTY {
-			return TrustRequest{}, usage.Errorf("trust needs a pubkey: phix trust [name] <pubkey>, or pipe '<name> <pubkey>' in (e.g. ssh other phix whoami | phix trust)")
-		}
-	default:
-		return TrustRequest{}, usage.Errorf("trust takes at most two arguments, got %d", len(args))
+	if len(args) > 0 {
+		return parseTrustTokens(args)
+	}
+	if stdinTTY {
+		return TrustRequest{}, usage.Errorf("trust needs a recipient: phix trust [name] <recipient>, or pipe '<name> <recipient>' in (e.g. ssh other phix whoami | phix trust)")
 	}
 	line, err := bufio.NewReader(stdin).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return TrustRequest{}, fmt.Errorf("reading the recipient from stdin: %w", err)
 	}
 	fields := strings.Fields(line)
-	switch len(fields) {
-	case 0:
-		return TrustRequest{}, usage.Errorf("trust: empty stdin (expected '<name> <pubkey>' or '<pubkey>')")
-	case 1:
-		return TrustRequest{Pubkey: fields[0]}, nil
+	if len(fields) == 0 {
+		return TrustRequest{}, usage.Errorf("trust: empty stdin (expected '<name> <recipient>' or '<recipient>')")
 	}
-	return TrustRequest{Name: fields[0], Pubkey: fields[1]}, nil
+	return parseTrustTokens(fields)
 }
 
-func AutoName(pubkey, localPubkey, hostname string) string {
-	if localPubkey != "" && pubkey == localPubkey {
+func parseTrustTokens(tokens []string) (TrustRequest, error) {
+	whole, err := agekey.ParseRecipient(strings.Join(tokens, " "))
+	if err == nil {
+		return TrustRequest{Recipient: whole}, nil
+	}
+	if len(tokens) == 1 {
+		return TrustRequest{}, usage.Errorf("trust: %v", err)
+	}
+	recipient, err := agekey.ParseRecipient(strings.Join(tokens[1:], " "))
+	if err != nil {
+		return TrustRequest{}, usage.Errorf("trust: %v", err)
+	}
+	return TrustRequest{Name: tokens[0], Recipient: recipient}, nil
+}
+
+func AutoName(recipient agekey.Recipient, local []agekey.Recipient, hostname string) string {
+	if slices.Contains(local, recipient) {
 		return hostname
 	}
-	if len(pubkey) <= autoNameSuffix {
-		return pubkey
+	if len(recipient) <= autoNameSuffix {
+		return string(recipient)
 	}
-	return pubkey[len(pubkey)-autoNameSuffix:]
+	return string(recipient[len(recipient)-autoNameSuffix:])
 }
 
 func ValidateTrustName(name string) error {
@@ -219,9 +241,6 @@ func ValidateTrustName(name string) error {
 func (s Store) Trust(ctx context.Context, req TrustRequest) error {
 	if err := ValidateTrustName(req.Name); err != nil {
 		return err
-	}
-	if _, err := agekey.ParseRecipient(req.Pubkey); err != nil {
-		return usage.Errorf("trust: %v", err)
 	}
 	names, err := s.SecretNames()
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -236,19 +255,19 @@ func (s Store) Trust(ctx context.Context, req TrustRequest) error {
 	if err != nil {
 		return fmt.Errorf("trust: %w", err)
 	}
-	updated, added, err := AddRecipient(saved[0].data, req.Pubkey, req.Name)
+	updated, added, err := AddRecipient(saved[0].data, string(req.Recipient), req.Name)
 	if err != nil {
-		return fmt.Errorf("trust: adding %s to %s: %w", req.Pubkey, s.configPath(), err)
+		return fmt.Errorf("trust: adding %s to %s: %w", req.Recipient, s.configPath(), err)
 	}
 	if !added {
-		s.Console.Out().Done("%s already present in .sops.yaml, nothing to do", req.Pubkey)
+		s.Console.Out().Done("%s already present in .sops.yaml, nothing to do", req.Recipient)
 		return nil
 	}
 	if err := atomicfile.WriteKeepingMode(s.configPath(), updated); err != nil {
 		return fmt.Errorf("trust: %w", err)
 	}
 	out := s.Console.Out()
-	out.Done("Added %s → %s to .sops.yaml", out.Style.Paint(req.Name, ui.Bold), req.Pubkey)
+	out.Done("Added %s → %s to .sops.yaml", out.Style.Paint(req.Name, ui.Bold), req.Recipient)
 
 	if err := s.rewrap(ctx, saved[1:]); err != nil {
 		if restoreErr := restore(saved); restoreErr != nil {

@@ -708,3 +708,63 @@ func TestPostSwitchHook(t *testing.T) {
 		t.Fatal("hook ran without its secret")
 	}
 }
+
+func TestTrustPostQuantumAndSSHRecipients(t *testing.T) {
+	requireTools(t, "sops", "age", "age-keygen", "ssh-to-age", "ssh-keygen")
+	h := newHarness(t)
+	host, err := shortHostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	adminKey := filepath.Join(h.dir, "admin.key")
+	command(t, "age-keygen", "-o", adminKey)
+	h.mustRun("", "trust", "admin", command(t, "age-keygen", "-y", adminKey))
+	h.mustRun("hunter2\n", "secret", "set", "token")
+	t.Setenv("SOPS_AGE_KEY_FILE", adminKey)
+
+	pqKey := filepath.Join(h.dir, "pq.key")
+	command(t, "age-keygen", "-pq", "-o", pqKey)
+	pq := command(t, "age-keygen", "-y", pqKey)
+	h.mustRun("", "trust", "vault", pq)
+
+	remoteKey := filepath.Join(h.dir, "remote")
+	command(t, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "root@remote", "-f", remoteKey)
+	remotePub := command(t, "cat", remoteKey+".pub")
+	remote := strings.Join(strings.Fields(remotePub)[:2], " ")
+	h.mustRun("", append([]string{"trust", "remote"}, strings.Fields(remotePub)...)...)
+
+	ownKey := filepath.Join(h.home, ".ssh", "id_ed25519")
+	command(t, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", ownKey)
+	ownPub := command(t, "cat", ownKey+".pub")
+	own := strings.Join(strings.Fields(ownPub)[:2], " ")
+	h.mustRun("", "trust", ownPub)
+
+	pipedKey := filepath.Join(h.dir, "piped")
+	command(t, "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "me@piped", "-f", pipedKey)
+	pipedPub := command(t, "cat", pipedKey+".pub")
+	piped := strings.Join(strings.Fields(pipedPub)[:2], " ")
+	h.mustRun("piped "+pipedPub+"\n", "trust")
+
+	_, comments := h.recipients()
+	for recipient, want := range map[string]string{pq: "vault", remote: "remote", own: host, piped: "piped"} {
+		if comments[recipient] != want {
+			t.Errorf("recipient %q labelled %q, want %q", recipient, comments[recipient], want)
+		}
+	}
+
+	token := filepath.Join(h.flake, "secrets", "token")
+	t.Setenv("SOPS_AGE_KEY_FILE", pqKey)
+	if plain := command(t, "sops", "--decrypt", "--input-type", "binary", "--output-type", "binary", token); plain != "hunter2" {
+		t.Fatalf("secrets/token decrypts to %q for the post-quantum key", plain)
+	}
+	t.Setenv("SOPS_AGE_KEY_FILE", "")
+	t.Setenv("SOPS_AGE_SSH_PRIVATE_KEY_FILE", remoteKey)
+	if plain := command(t, "sops", "--decrypt", "--input-type", "binary", "--output-type", "binary", token); plain != "hunter2" {
+		t.Fatalf("secrets/token decrypts to %q for the ssh key", plain)
+	}
+
+	if _, _, code := h.run("", "trust", "x", "ssh-ed25519", "AAAAC3NzaC1lZDI1NTE5AAAAIMpnPU"); code != 2 {
+		t.Fatalf("truncated ssh key exited %d, want 2", code)
+	}
+}

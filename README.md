@@ -11,7 +11,7 @@ phix upgrade       # update flake inputs, commit and push flake.lock, switch
 phix diff [a] [b]  # package diff between generations (default: previous vs current)
 phix generations   # running and boot generations, versions, closure sizes
 phix secret        # edit, set or rotate a sops secret under secrets/
-phix trust         # add an age recipient to .sops.yaml and re-wrap secrets/*
+phix trust         # add an age, post-quantum age or ssh-ed25519 recipient and re-wrap secrets/*
 phix mcp           # MCP server for nixpkgs, options, flakes, caches and docs
 phix help          # every verb
 ```
@@ -89,8 +89,10 @@ The rebuild verbs target NixOS and nix-on-droid; `phix mcp` needs no phix
 config and runs on all of them.
 
 phix drives `nix`, `git`, `sops`, `sudo` and `systemd-run`; the package puts
-`sops` on its PATH. Age recipients are derived from the SSH key and validated
-in-process, so `age` and `ssh-to-age` are only needed by the test suite, which
+`sops` on its PATH. `trust` takes an age key (`age1…`), a post-quantum age key
+(`age1pq1…`) or an `ssh-ed25519` public key, validates it in-process, and stores
+it in canonical form. `whoami` derives this host's age recipient from its SSH
+key in-process, so `age` and `ssh-to-age` are only needed by the test suite, which
 checks the conversion against `ssh-to-age`.
 
 ## Home Manager

@@ -10,6 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/stubbedev/phix/internal/agekey"
 	"github.com/stubbedev/phix/internal/ui"
 	"github.com/stubbedev/phix/internal/usage"
 )
@@ -18,6 +19,7 @@ const (
 	firstKey  = "age1ph82fy2jgjsmcsaufsrlzsql65g0ca954elacmqlsesz9ladwd0sgxsxj8"
 	secondKey = "age1grkukkq0j3sgj84suvxftywmlgltrncp577ekgua9yv3cfrrfvrq7rycsh"
 	newKey    = "age1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqs3290gq"
+	sshKey    = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMpnPU/pYuebNoM5q8NzBAD5uix+12UHsJJttjEFwA0e"
 )
 
 func recipients(t *testing.T, doc []byte) map[string]string {
@@ -114,10 +116,16 @@ func TestParseTrustArgs(t *testing.T) {
 		tty   bool
 		want  TrustRequest
 	}{
-		{[]string{"n", "k"}, "", true, TrustRequest{Name: "n", Pubkey: "k"}},
-		{[]string{"k"}, "", true, TrustRequest{Pubkey: "k"}},
-		{nil, "host k\nignored\n", false, TrustRequest{Name: "host", Pubkey: "k"}},
-		{nil, "k", false, TrustRequest{Pubkey: "k"}},
+		{[]string{"n", newKey}, "", true, TrustRequest{Name: "n", Recipient: newKey}},
+		{[]string{newKey}, "", true, TrustRequest{Recipient: newKey}},
+		{[]string{strings.ToUpper(newKey)}, "", true, TrustRequest{Recipient: newKey}},
+		{nil, "host " + newKey + "\nignored\n", false, TrustRequest{Name: "host", Recipient: newKey}},
+		{nil, newKey, false, TrustRequest{Recipient: newKey}},
+		{[]string{"n", sshKey + " me@host"}, "", true, TrustRequest{Name: "n", Recipient: sshKey}},
+		{append([]string{"n"}, strings.Fields(sshKey+" me@host")...), "", true, TrustRequest{Name: "n", Recipient: sshKey}},
+		{strings.Fields(sshKey + " me@host"), "", true, TrustRequest{Recipient: sshKey}},
+		{nil, "host " + sshKey + " me@host\n", false, TrustRequest{Name: "host", Recipient: sshKey}},
+		{nil, sshKey + "\n", false, TrustRequest{Recipient: sshKey}},
 	}
 	for _, c := range cases {
 		got, err := ParseTrustArgs(c.args, strings.NewReader(c.stdin), c.tty)
@@ -129,7 +137,15 @@ func TestParseTrustArgs(t *testing.T) {
 		args  []string
 		stdin string
 		tty   bool
-	}{{nil, "", true}, {nil, "\n", false}, {[]string{"a", "b", "c"}, "", true}} {
+	}{
+		{nil, "", true},
+		{nil, "\n", false},
+		{[]string{"k"}, "", true},
+		{[]string{"n", "k"}, "", true},
+		{[]string{"a", "b", "c"}, "", true},
+		{[]string{"n", "ssh-rsa", "AAAAB3NzaC1yc2EAAAADAQABAAABAQC"}, "", true},
+		{nil, "host not-a-key\n", false},
+	} {
 		if _, err := ParseTrustArgs(c.args, strings.NewReader(c.stdin), c.tty); !usage.Is(err) {
 			t.Errorf("ParseTrustArgs(%v, %q, tty=%v) = %v, want a usage error", c.args, c.stdin, c.tty, err)
 		}
@@ -137,11 +153,17 @@ func TestParseTrustArgs(t *testing.T) {
 }
 
 func TestAutoName(t *testing.T) {
-	if got := AutoName(firstKey, firstKey, "desktop"); got != "desktop" {
-		t.Fatalf("own key named %q", got)
+	local := []agekey.Recipient{firstKey, sshKey}
+	for _, own := range local {
+		if got := AutoName(own, local, "desktop"); got != "desktop" {
+			t.Fatalf("own key %q named %q", own, got)
+		}
 	}
-	if got := AutoName(firstKey, "", "desktop"); got != firstKey[len(firstKey)-8:] {
+	if got := AutoName(newKey, local, "desktop"); got != newKey[len(newKey)-8:] {
 		t.Fatalf("foreign key named %q", got)
+	}
+	if got := AutoName(firstKey, nil, "desktop"); got != firstKey[len(firstKey)-8:] {
+		t.Fatalf("key named %q without a local key", got)
 	}
 }
 
@@ -230,7 +252,7 @@ func trustFixture(t *testing.T, secrets ...string) (Store, map[string][]byte) {
 
 func TestTrustRewrapsEverySecretAsBinary(t *testing.T) {
 	s, files := trustFixture(t, "token", "vpn.env", "mcp.json")
-	if err := s.Trust(context.Background(), TrustRequest{Name: "laptop", Pubkey: newKey}); err != nil {
+	if err := s.Trust(context.Background(), TrustRequest{Name: "laptop", Recipient: newKey}); err != nil {
 		t.Fatal(err)
 	}
 	for path, before := range files {
@@ -252,7 +274,7 @@ func TestTrustRewrapsEverySecretAsBinary(t *testing.T) {
 
 func TestTrustFailureRestoresConfigAndSecrets(t *testing.T) {
 	s, files := trustFixture(t, "a", "broken", "c")
-	if err := s.Trust(context.Background(), TrustRequest{Name: "laptop", Pubkey: newKey}); err == nil {
+	if err := s.Trust(context.Background(), TrustRequest{Name: "laptop", Recipient: newKey}); err == nil {
 		t.Fatal("Trust succeeded although re-wrapping secrets/broken failed")
 	}
 	for path, before := range files {
