@@ -29,7 +29,8 @@ const (
 var (
 	secretNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 	trustNamePattern  = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
-	binaryMode        = []string{"--input-type", "binary", "--output-type", "binary"}
+	binaryInput       = []string{"--input-type", "binary"}
+	binaryMode        = append(slices.Clone(binaryInput), "--output-type", "binary")
 )
 
 type Store struct {
@@ -222,11 +223,20 @@ func (s Store) Trust(ctx context.Context, req TrustRequest) error {
 	if _, err := agekey.ParseRecipient(req.Pubkey); err != nil {
 		return usage.Errorf("trust: %v", err)
 	}
-	original, err := os.ReadFile(s.configPath())
-	if err != nil {
-		return fmt.Errorf("trust: reading %s: %w", s.configPath(), err)
+	names, err := s.SecretNames()
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("trust: %w", err)
 	}
-	updated, added, err := AddRecipient(original, req.Pubkey, req.Name)
+	paths := make([]string, 0, len(names)+1)
+	paths = append(paths, s.configPath())
+	for _, name := range names {
+		paths = append(paths, filepath.Join(s.secretsDir(), name))
+	}
+	saved, err := snapshot(paths)
+	if err != nil {
+		return fmt.Errorf("trust: %w", err)
+	}
+	updated, added, err := AddRecipient(saved[0].data, req.Pubkey, req.Name)
 	if err != nil {
 		return fmt.Errorf("trust: adding %s to %s: %w", req.Pubkey, s.configPath(), err)
 	}
@@ -240,16 +250,15 @@ func (s Store) Trust(ctx context.Context, req TrustRequest) error {
 	out := s.Console.Out()
 	out.Done("Added %s → %s to .sops.yaml", out.Style.Paint(req.Name, ui.Bold), req.Pubkey)
 
-	count, err := s.rewrapAll(ctx)
-	if err != nil {
-		if restoreErr := atomicfile.WriteKeepingMode(s.configPath(), original); restoreErr != nil {
-			return fmt.Errorf("trust: %w; restoring .sops.yaml also failed: %w", err, restoreErr)
+	if err := s.rewrap(ctx, saved[1:]); err != nil {
+		if restoreErr := restore(saved); restoreErr != nil {
+			return fmt.Errorf("trust: %w; rolling back also failed: %w", err, restoreErr)
 		}
-		s.Console.Log().Warn("trust: rolled back .sops.yaml")
+		s.Console.Log().Warn("trust: rolled back .sops.yaml and secrets/")
 		return fmt.Errorf("trust: %w", err)
 	}
 
-	out.Done("Trusted %s across %d secret file(s)", out.Style.Paint(req.Name, ui.Bold), count)
+	out.Done("Trusted %s across %d secret file(s)", out.Style.Paint(req.Name, ui.Bold), len(names))
 	command := func(format string, args ...any) string { return out.Style.Paint(fmt.Sprintf(format, args...), ui.Cyan) }
 	fmt.Fprintf(out.W, "  %s  %s\n", out.Style.Paint("Review:", ui.Bold), command("git -C %q diff -- .sops.yaml secrets/", s.Flake))
 	fmt.Fprintf(out.W, "  %s  %s\n", out.Style.Paint("Commit:", ui.Bold), command("git -C %q add .sops.yaml secrets/ && \\", s.Flake))
@@ -257,19 +266,39 @@ func (s Store) Trust(ctx context.Context, req TrustRequest) error {
 	return nil
 }
 
-func (s Store) rewrapAll(ctx context.Context) (int, error) {
-	names, err := s.SecretNames()
-	if errors.Is(err, fs.ErrNotExist) {
-		return 0, nil
+type savedFile struct {
+	path string
+	data []byte
+}
+
+func snapshot(paths []string) ([]savedFile, error) {
+	saved := make([]savedFile, len(paths))
+	for i, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("reading %s: %w", path, err)
+		}
+		saved[i] = savedFile{path: path, data: data}
 	}
-	if err != nil {
-		return 0, err
-	}
-	for _, name := range names {
-		s.Console.Out().Step("Re-wrapping %s", name)
-		if err := s.Console.RunIndented(ctx, s.sops("updatekeys", "--yes", filepath.Join(s.secretsDir(), name)), sopsFormat); err != nil {
-			return 0, fmt.Errorf("re-wrapping %s: %w", name, err)
+	return saved, nil
+}
+
+func restore(saved []savedFile) error {
+	var errs []error
+	for _, f := range saved {
+		if err := atomicfile.WriteKeepingMode(f.path, f.data); err != nil {
+			errs = append(errs, err)
 		}
 	}
-	return len(names), nil
+	return errors.Join(errs...)
+}
+
+func (s Store) rewrap(ctx context.Context, secrets []savedFile) error {
+	for _, f := range secrets {
+		s.Console.Out().Step("Re-wrapping %s", filepath.Base(f.path))
+		if err := s.Console.RunIndented(ctx, s.sops(append([]string{"updatekeys", "--yes"}, append(slices.Clone(binaryInput), f.path)...)...), sopsFormat); err != nil {
+			return fmt.Errorf("re-wrapping %s: %w", filepath.Base(f.path), err)
+		}
+	}
+	return nil
 }

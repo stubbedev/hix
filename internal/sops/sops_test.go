@@ -1,6 +1,8 @@
 package sops
 
 import (
+	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +10,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"github.com/stubbedev/phix/internal/ui"
 	"github.com/stubbedev/phix/internal/usage"
 )
 
@@ -183,5 +186,82 @@ func TestResolveSecret(t *testing.T) {
 	names, err := s.SecretNames()
 	if err != nil || strings.Join(names, ",") != "aws.ini,aws.json,ssh.yaml,token" {
 		t.Errorf("SecretNames = %v, %v", names, err)
+	}
+}
+
+const fakeSops = `#!/bin/sh
+for path; do :; done
+case " $* " in
+  *" updatekeys --yes --input-type binary "*) ;;
+  *) echo "updatekeys without binary input: $*" >&2; exit 1 ;;
+esac
+[ "$(basename "$path")" = broken ] && exit 1
+printf '+rewrapped' >> "$path"
+`
+
+func trustFixture(t *testing.T, secrets ...string) (Store, map[string][]byte) {
+	t.Helper()
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "sops"), []byte(fakeSops), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	flake := t.TempDir()
+	if err := os.Mkdir(filepath.Join(flake, "secrets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config, err := os.ReadFile(filepath.Join("testdata", "sops.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string][]byte{filepath.Join(flake, ".sops.yaml"): config}
+	for _, name := range secrets {
+		files[filepath.Join(flake, "secrets", name)] = []byte("ciphertext of " + name)
+	}
+	for path, data := range files {
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var buf bytes.Buffer
+	console := ui.Console{Stdout: &buf, Stderr: &buf, OutStyle: ui.NewStyle(false, nil), ErrStyle: ui.NewStyle(false, nil)}
+	return Store{Flake: flake, Console: console}, files
+}
+
+func TestTrustRewrapsEverySecretAsBinary(t *testing.T) {
+	s, files := trustFixture(t, "token", "vpn.env", "mcp.json")
+	if err := s.Trust(context.Background(), TrustRequest{Name: "laptop", Pubkey: newKey}); err != nil {
+		t.Fatal(err)
+	}
+	for path, before := range files {
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if path == s.configPath() {
+			if recipients(t, after)[newKey] != "laptop" {
+				t.Errorf("recipient not added:\n%s", after)
+			}
+			continue
+		}
+		if string(after) != string(before)+"+rewrapped" {
+			t.Errorf("%s = %q, want it re-wrapped", path, after)
+		}
+	}
+}
+
+func TestTrustFailureRestoresConfigAndSecrets(t *testing.T) {
+	s, files := trustFixture(t, "a", "broken", "c")
+	if err := s.Trust(context.Background(), TrustRequest{Name: "laptop", Pubkey: newKey}); err == nil {
+		t.Fatal("Trust succeeded although re-wrapping secrets/broken failed")
+	}
+	for path, before := range files {
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(after, before) {
+			t.Errorf("%s not restored: %q", path, after)
+		}
 	}
 }
