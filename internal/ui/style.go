@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/term"
@@ -193,4 +194,17 @@ func scaleBytes(n int64, exp int) float64 {
 
 func byteSuffix(exp int) string {
 	return string("KMGTP"[exp]) + "iB"
+}
+
+func Duration(d time.Duration) string {
+	secs := int64(max(d, 0) / time.Second)
+	switch {
+	case secs < 60:
+		return fmt.Sprintf("%ds", secs)
+	case secs < 3600:
+		return fmt.Sprintf("%dm%ds", secs/60, secs%60)
+	case secs < 86400:
+		return fmt.Sprintf("%dh%dm", secs/3600, secs%3600/60)
+	}
+	return fmt.Sprintf("%dd%dh", secs/86400, secs%86400/3600)
 }

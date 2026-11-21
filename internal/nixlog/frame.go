@@ -56,7 +56,7 @@ func (s *State) Summary(st ui.Style, now time.Time) []string {
 		return nil
 	}
 	ic := st.Icons()
-	elapsed := formatDuration(now.Sub(s.started))
+	elapsed := ui.Duration(now.Sub(s.started))
 	if builds.Failed > 0 {
 		head := fmt.Sprintf("%d failed build(s)", builds.Failed)
 		if cancelled := len(s.withStatus(Cancelled)); cancelled > 0 {
@@ -301,9 +301,9 @@ func (s *State) drvRow(st ui.Style, d *Derivation, now time.Time) string {
 		if d.Phase != "" {
 			row += "  " + st.Paint(d.Phase, ui.Gray)
 		}
-		timer := formatDuration(now.Sub(d.Start))
+		timer := ui.Duration(now.Sub(d.Start))
 		if d.Estimate > 0 {
-			timer += " / " + formatDuration(d.Estimate)
+			timer += " / " + ui.Duration(d.Estimate)
 		}
 		return row + "  " + st.Paint(ic.With(ic.Clock, timer), ui.Gray)
 	case Failed:
@@ -361,7 +361,7 @@ func (s *State) footer(st ui.Style, now time.Time) []footerLine {
 		lines = append(lines, footerLine{joined: "┝━ ", alone: "┍━ ", body: row})
 	}
 	ic := st.Icons()
-	clock := st.Paint(ic.With(ic.Clock, formatDuration(now.Sub(s.started))), ui.Gray)
+	clock := st.Paint(ic.With(ic.Clock, ui.Duration(now.Sub(s.started))), ui.Gray)
 	var trailer []string
 	if phase := s.Phase(); phase != PhaseNone {
 		trailer = append(trailer, st.Paint(phase.String(), ui.Magenta, ui.Italic))
@@ -434,18 +434,7 @@ func (s *State) downloadRow(st ui.Style, now time.Time) (string, bool) {
 	}
 	row += "  " + st.Paint(ui.Bytes(rate)+"/s", ui.Cyan)
 	if eta := time.Duration((d.Expected-d.Done)/rate) * time.Second; eta >= time.Second {
-		row += "  " + st.Paint("ETA "+formatDuration(eta), ui.Gray)
+		row += "  " + st.Paint("ETA "+ui.Duration(eta), ui.Gray)
 	}
 	return row, true
-}
-
-func formatDuration(d time.Duration) string {
-	secs := int64(max(d, 0) / time.Second)
-	switch {
-	case secs < 60:
-		return fmt.Sprintf("%ds", secs)
-	case secs < 3600:
-		return fmt.Sprintf("%dm%ds", secs/60, secs%60)
-	}
-	return fmt.Sprintf("%dh%dm", secs/3600, secs%3600/60)
 }
