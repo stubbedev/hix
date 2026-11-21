@@ -692,7 +692,7 @@ func TestShouldRestart(t *testing.T) {
 }
 
 func TestDetectLayoutRejectsLongSocketPaths(t *testing.T) {
-	long := filepath.Join("/tmp", strings.Repeat("x", 100))
+	long := filepath.Join("/tmp", strings.Repeat("x", maxSocketPath))
 	env := map[string]string{"HOME": t.TempDir(), "XDG_RUNTIME_DIR": long}
 	_, err := DetectLayout(func(k string) string { return env[k] })
 	if err == nil || !strings.Contains(err.Error(), "set XDG_RUNTIME_DIR") {

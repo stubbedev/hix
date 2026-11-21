@@ -64,7 +64,12 @@ func androidHarness(t *testing.T) (*harness, string) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(h.home, ".config"))
 	t.Setenv("XDG_STATE_HOME", filepath.Join(h.home, ".local", "state"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(h.home, ".local", "share"))
-	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(h.dir, "run"))
+	runtime, err := os.MkdirTemp("", "phx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(runtime) })
+	t.Setenv("XDG_RUNTIME_DIR", runtime)
 	units := filepath.Join(h.home, ".config", "systemd", "user")
 	if err := os.MkdirAll(filepath.Join(units, "default.target.wants"), 0o755); err != nil {
 		t.Fatal(err)

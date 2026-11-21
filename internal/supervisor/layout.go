@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/stubbedev/phix/internal/unit"
 )
 
@@ -97,7 +99,7 @@ func DetectLayout(getenv func(string) string) (Layout, error) {
 	return l, nil
 }
 
-const maxSocketPath = 107
+var maxSocketPath = len(unix.RawSockaddrUnix{}.Path) - 1
 
 func (l Layout) checkSocketPaths() error {
 	longest := l.Socket()
