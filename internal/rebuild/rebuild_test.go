@@ -370,6 +370,7 @@ func TestActivationFormat(t *testing.T) {
 		"restarting the following units: home-manager-stubbe.service, sshd.service",
 		"stopping the following units: old.service",
 		"the following new units were started: NetworkManager-dispatcher.service",
+		"starting the following user units: srv-daemon.service, mail-sync.timer",
 		"nixos-rebuild-switch-to-configuration.service: Deactivated successfully.",
 		"nixos-rebuild-switch-to-configuration.service: Failed with result 'exit-code'.",
 	}
@@ -387,6 +388,7 @@ func TestActivationFormat(t *testing.T) {
 		"│ ◆ restart home-manager-stubbe, sshd\n" +
 		"│ ■ stop    old\n" +
 		"│ ▸ start   NetworkManager-dispatcher\n" +
+		"│ ▸ start   srv-daemon, mail-sync.timer (user)\n" +
 		"│ nixos-rebuild-switch-to-configuration.service: Failed with result 'exit-code'.\n"
 	if out.String() != want {
 		t.Fatalf("activation output:\n%s\nwant:\n%s", out.String(), want)

@@ -168,7 +168,7 @@ func runAndroid(ctx context.Context, rt Runtime, v Verb, opts Options) (string, 
 		}
 		rt.Console.Log().StepWith(rt.Console.ErrStyle.Icons().Activate, "Activating configuration")
 		activate := proc.Cmd{Argv: []string{filepath.Join(path, "activate")}, Stdin: rt.Console.Stdin}
-		if err := rt.Console.RunIndented(ctx, activate, ui.Verbosity(ui.Notable, opts.Verbose)); err != nil {
+		if err := rt.Console.RunIndented(ctx, activate, ui.Verbosity(activationFormat(), opts.Verbose)); err != nil {
 			return "", err
 		}
 		return path, printActivated(rt.Console, Switch, DroidProfile)
@@ -378,7 +378,7 @@ func rollbackAndroid(ctx context.Context, c ui.Console, profile string, generati
 		return fmt.Errorf("rolling back to %s: no executable activate script, the generation is broken or garbage collected", target)
 	}
 	c.Log().StepWith(c.ErrStyle.Icons().Activate, "Activating %s", target)
-	return c.RunIndented(ctx, proc.Cmd{Argv: []string{activate}, Stdin: c.Stdin}, ui.Notable)
+	return c.RunIndented(ctx, proc.Cmd{Argv: []string{activate}, Stdin: c.Stdin}, activationFormat())
 }
 
 func HostAttrs(ctx context.Context, cfg config.Config) ([]string, error) {

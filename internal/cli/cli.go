@@ -220,6 +220,7 @@ Environment:
 		mcp,
 		exclusive(a.trustCmd()),
 		exclusive(a.secretCmd()),
+		a.serviceCmd(),
 	)
 	if a.cfgErr != nil || len(a.cfg.Commands) == 0 {
 		return root, nil

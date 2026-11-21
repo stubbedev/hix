@@ -13,6 +13,7 @@ phix generations   # running and boot generations, versions, closure sizes
 phix secret        # edit, set or rotate a sops secret under secrets/
 phix trust         # add an age, post-quantum age or ssh-ed25519 recipient and re-wrap secrets/*
 phix mcp           # MCP server for nixpkgs, options, flakes, caches and docs
+phix service       # run home-manager's systemd user units on Android
 phix help          # every verb
 ```
 
@@ -86,7 +87,9 @@ phix builds for Linux and macOS (`x86_64-linux`, `aarch64-linux`,
 `aarch64-darwin`), and CI builds and tests each one: `nix run
 github:stubbedev/phix -- mcp` or `go install github.com/stubbedev/phix@latest`.
 The rebuild verbs target NixOS and nix-on-droid; `phix mcp` needs no phix
-config and runs on all of them.
+config and runs on all of them. `phix service` runs on nix-on-droid, where no
+systemd does; unit files are parsed with
+[go-systemd](https://github.com/coreos/go-systemd).
 
 phix drives `nix`, `git`, `sops`, `sudo` and `systemd-run`; the package puts
 `sops` on its PATH. `trust` takes an age key (`age1…`), a post-quantum age key
@@ -136,6 +139,60 @@ warning.
 
 `PHIX_CONFIG`, `PHIX_FLAKE_DIR` and `PHIX_NIXOS_CONFIG` override the config file,
 the flake directory and the attribute; `--attr` overrides both.
+
+## Android services
+
+nix-on-droid has no init system, so the systemd user units home-manager
+generates are written to `~/.config/systemd/user` and never run. On
+`platform = "android"` phix runs them itself: `services.*` and
+`systemd.user.services` modules work on the phone unchanged, as they do on
+NixOS.
+
+```sh
+phix service                  # status of every unit
+phix service status <unit>    # one unit in detail, with its recent log
+phix service start|stop|restart|reload <unit>...
+phix service logs [-f] [-n N] [unit]
+phix service sync             # apply changed units, as sd-switch does
+phix service up | down        # start or stop the supervisor
+```
+
+A supervisor process loads the units (fragments, drop-ins, templates,
+`.wants`/`.requires` links and systemd's built-in user targets) and starts
+everything `default.target` wants. It runs `simple`, `exec`, `oneshot`,
+`notify` and `notify-reload` services with their `Exec*=` commands,
+`Environment=`/`EnvironmentFile=`, `environment.d` and `user.conf`
+environments, `Restart=` policies and start limits, `Wants`/`Requires`/
+`Requisite`/`BindsTo`/`PartOf`/`Conflicts` with `After`/`Before` ordering,
+`Condition*=`/`Assert*=`, `OnFailure`/`OnSuccess`, stop timeouts escalating
+to `SIGKILL` across the process group, `Nice=`, `IOScheduling*=` and `UMask=`.
+Timers support `OnCalendar=` (systemd's calendar syntax, including the
+shorthands and `~` for days from the end of the month), `OnActiveSec`,
+`OnBootSec`, `OnStartupSec`, `OnUnitActiveSec`, `OnUnitInactiveSec`,
+`Persistent=` and `RandomizedDelaySec=`. Android has no boot hook for
+nix-on-droid, so `OnBootSec` and `OnStartupSec` count from when the
+supervisor started.
+
+Directives that only restrict or account for a service (sandboxing,
+resource control, `Documentation=`, `WatchdogSec=` and the like) have no
+effect in proot; they are accepted and listed under `Ignored` in the status.
+Anything else phix cannot honour, such as `Type=forking`, `User=`, socket,
+path and mount units, keeps that unit from loading, with the reason in the
+status. The other units still run.
+
+The Home Manager module wires it up: every login shell runs `phix service up`,
+from `hm-session-vars.sh`, so services start when the nix-on-droid app first
+opens a session (and over ssh). Every activation runs `phix service sync`,
+which restarts units whose files changed (honouring `X-SwitchMethod=`), stops
+removed units and starts new ones. `phix switch` shows these changes the same
+way it shows them on NixOS. When phix itself changed, the supervisor restarts
+on the new phix. Keep Android from suspending the services with a oneshot
+unit that runs `termux-wake-lock`.
+
+Logs go to `$XDG_STATE_HOME/phix/services/logs/<unit>.log`, one timestamped
+line per output line (UTC). Each log rotates once at 1 MiB. Persistent timer
+stamps go to `$XDG_STATE_HOME/phix/services/timers/`. The supervisor's
+socket lives in `$XDG_RUNTIME_DIR/phix` (or `$TMPDIR/phix-runtime-<uid>/phix`).
 
 ## Development
 

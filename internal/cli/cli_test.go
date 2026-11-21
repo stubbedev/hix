@@ -159,7 +159,7 @@ func command(t *testing.T, name string, args ...string) string {
 func TestHelp(t *testing.T) {
 	h := newHarness(t)
 	out := h.mustRun("", "help")
-	for _, want := range []string{"Usage:", "Rebuild:", "Maintenance:", "switch", "dry-activate", "trust", "secret", "PHIX_FLAKE_DIR"} {
+	for _, want := range []string{"Usage:", "Rebuild:", "Maintenance:", "switch", "dry-activate", "trust", "secret", "service", "PHIX_FLAKE_DIR"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("help lacks %q:\n%s", want, out)
 		}
