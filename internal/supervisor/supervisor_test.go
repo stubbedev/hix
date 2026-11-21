@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,6 +32,9 @@ func TestMain(m *testing.M) {
 	case "socket":
 		socketHelper()
 		return
+	case "attributes":
+		attributesHelper()
+		return
 	}
 	os.Exit(m.Run())
 }
@@ -45,6 +49,23 @@ func notifyHelper() {
 	fmt.Fprint(conn, "STATUS=warming up\nREADY=1")
 	conn.Close()
 	time.Sleep(time.Hour)
+}
+
+func attributesHelper() {
+	prio, err := syscall.Getpriority(syscall.PRIO_PROCESS, 0)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(9)
+	}
+	if runtime.GOOS == "linux" {
+		prio = 20 - prio
+	}
+	mask := syscall.Umask(0)
+	fmt.Printf("nice=%d umask=%04o\n", prio, mask)
+	if err := os.WriteFile(os.Getenv("ATTRIBUTES_OUT"), fmt.Appendf(nil, "%d %04o", prio, mask), 0o600); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(10)
+	}
 }
 
 func socketHelper() {
@@ -524,14 +545,15 @@ func TestPartOfPropagatesRestart(t *testing.T) {
 
 func TestProcessAttributesThroughTheHelper(t *testing.T) {
 	h := newHarness(t)
-	h.install("nice.service", "[Service]\nType=oneshot\nNice=7\nUMask=0077\nExecStart=/bin/sh -c 'cut -d\" \" -f19 /proc/self/stat > %h/nice; umask > %h/umask'\n", "default.target")
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.install("nice.service", fmt.Sprintf("[Service]\nType=oneshot\nNice=7\nUMask=0077\nEnvironment=%s=attributes ATTRIBUTES_OUT=%%h/attributes\nExecStart=%s\n", helperEnv, self), "default.target")
 	h.start()
 	h.waitState("nice.service", "inactive", "dead")
-	if nice := strings.TrimSpace(h.waitFile("nice", func(c string) bool { return c != "" })); nice != "7" {
-		t.Errorf("nice = %q, want 7", nice)
-	}
-	if umask := strings.TrimSpace(h.waitFile("umask", func(c string) bool { return c != "" })); umask != "0077" {
-		t.Errorf("umask = %q, want 0077", umask)
+	if got := h.waitFile("attributes", func(c string) bool { return c != "" }); got != "7 0077" {
+		t.Errorf("nice and umask = %q, want \"7 0077\"", got)
 	}
 }
 
