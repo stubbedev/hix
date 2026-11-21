@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -157,7 +158,7 @@ func TestSystemctlAndJournalctlShims(t *testing.T) {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		out := h.mustRun("", "service", "journalctl", "--user", "-u", "app", "-o", "cat")
-		if strings.Contains(out, "\nhello\n") {
+		if slices.Contains(strings.Split(out, "\n"), "hello") {
 			break
 		}
 		if time.Now().After(deadline) {
