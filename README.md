@@ -171,14 +171,20 @@ shorthands and `~` for days from the end of the month), `OnActiveSec`,
 `OnBootSec`, `OnStartupSec`, `OnUnitActiveSec`, `OnUnitInactiveSec`,
 `Persistent=` and `RandomizedDelaySec=`. Android has no boot hook for
 nix-on-droid, so `OnBootSec` and `OnStartupSec` count from when the
-supervisor started.
+supervisor started. Socket units (`ListenStream`, `ListenDatagram`,
+`ListenSequentialPacket` on unix paths or TCP/UDP ports, `Accept=no`) are
+activated the systemd way: the supervisor listens and starts the service on
+the first connection, passing the sockets as `LISTEN_FDS`. Bare executable
+names in `Exec*=` are looked up in the unit's `PATH` and then in systemd's own
+`bin`, as systemd's fixed search path would, so units home-manager copies
+from systemd (`systemd-tmpfiles-setup.service`) run too.
 
 Directives that only restrict or account for a service (sandboxing,
 resource control, `Documentation=`, `WatchdogSec=` and the like) have no
 effect in proot; they are accepted and listed under `Ignored` in the status.
-Anything else phix cannot honour, such as `Type=forking`, `User=`, socket,
-path and mount units, keeps that unit from loading, with the reason in the
-status. The other units still run.
+Anything else phix cannot honour, such as `Type=forking`, `User=`,
+`Accept=yes`, path and mount units, keeps that unit from loading, with the
+reason in the status. The other units still run.
 
 The Home Manager module wires it up: every login shell runs `phix service up`,
 from `hm-session-vars.sh`, so services start when the nix-on-droid app first
@@ -188,6 +194,15 @@ removed units and starts new ones. `phix switch` shows these changes the same
 way it shows them on NixOS. When phix itself changed, the supervisor restarts
 on the new phix. Keep Android from suspending the services with a oneshot
 unit that runs `termux-wake-lock`.
+
+It also fills the other gaps nix-on-droid leaves next to a systemd host:
+`XDG_RUNTIME_DIR` defaults to `/tmp/runtime-<user>` (nix-on-droid sets none),
+and `systemctl --user` and `journalctl --user` are provided for scripts and
+habits (`start`, `stop`, `restart`, `try-restart`, `reload`, `status`,
+`is-active`, `is-enabled`, `is-failed`, `is-system-running`, `cat`,
+`daemon-reload`, `reset-failed`; `journalctl -u <unit> [-f] [-n N] [-o cat]`).
+`enable` and `disable` are refused: units are enabled declaratively through
+home-manager's `Install.WantedBy`.
 
 Logs go to `$XDG_STATE_HOME/phix/services/logs/<unit>.log`, one timestamped
 line per output line (UTC). Each log rotates once at 1 MiB. Persistent timer

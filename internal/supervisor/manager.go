@@ -75,6 +75,8 @@ type state struct {
 	phaseGen      uint64
 	restart       *time.Timer
 	timer         *timerRun
+	listeners     []listener
+	watch         *socketWatch
 }
 
 func (st *state) name() unit.Name { return st.u.Name }
@@ -127,6 +129,9 @@ func buildGraph(units map[unit.Name]*unit.Unit) graph {
 		if u.Timer != nil {
 			add(g.triggeredBy, u.Timer.Unit, n)
 		}
+		if u.Socket != nil {
+			add(g.triggeredBy, u.Socket.Service, n)
+		}
 	}
 	return g
 }
@@ -140,7 +145,7 @@ func sortedNames[V any](m map[unit.Name]V) []unit.Name {
 type Manager struct {
 	layout    Layout
 	journal   *Journal
-	helper    string
+	program   Program
 	inherited []string
 	local     *time.Location
 	now       func() time.Time
@@ -158,12 +163,17 @@ type Manager struct {
 	shuttingDown bool
 }
 
-func newManager(layout Layout, helper string, inherited []string) *Manager {
+type Program struct {
+	Executable string
+	ExecPath   []string
+}
+
+func newManager(layout Layout, program Program, inherited []string) *Manager {
 	now := time.Now
 	return &Manager{
 		layout:    layout,
 		journal:   NewJournal(layout.LogDir(), now),
-		helper:    helper,
+		program:   program,
 		inherited: inherited,
 		local:     time.Local,
 		now:       now,
@@ -577,6 +587,15 @@ func (m *Manager) beginStart(st *state) {
 	case unit.Timer:
 		m.startTimer(st)
 		m.finishJob(st.name(), nil)
+	case unit.Socket:
+		if err := m.startSocket(st); err != nil {
+			m.ulog(st, "Failed to listen: %v", err)
+			st.result = "resources"
+			m.setState(st, stateFailed, "failed")
+			m.finishJob(st.name(), fmt.Errorf("%s: %w", st.name(), err))
+			return
+		}
+		m.finishJob(st.name(), nil)
 	default:
 		m.setState(st, stateActive, "active")
 		m.unitActivated(st)
@@ -626,6 +645,9 @@ func (m *Manager) beginStop(st *state) {
 	case unit.Timer:
 		m.stopTimer(st)
 		m.finishJob(st.name(), nil)
+	case unit.Socket:
+		m.stopSocket(st)
+		m.finishJob(st.name(), nil)
 	default:
 		if st.running() {
 			m.setState(st, stateInactive, "dead")
@@ -639,7 +661,7 @@ func (m *Manager) unitActivated(st *state) {
 	st.activeEnter = m.now()
 	for _, t := range m.graph.triggeredBy[st.name()] {
 		if ts := m.states[t]; ts != nil {
-			m.schedule(ts)
+			m.retrigger(ts)
 		}
 	}
 }
@@ -648,7 +670,7 @@ func (m *Manager) unitDeactivated(st *state) {
 	st.inactiveEnter = m.now()
 	for _, t := range m.graph.triggeredBy[st.name()] {
 		if ts := m.states[t]; ts != nil {
-			m.schedule(ts)
+			m.retrigger(ts)
 		}
 	}
 	if m.shuttingDown {

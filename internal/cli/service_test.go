@@ -140,3 +140,51 @@ func TestServiceLifecycle(t *testing.T) {
 		t.Errorf("status after down: exit %d, stderr %q", code, errOut)
 	}
 }
+
+func TestSystemctlAndJournalctlShims(t *testing.T) {
+	h, units := androidHarness(t)
+	writeUnit(t, units, "app.service", "[Service]\nExecStart=/bin/sh -c 'echo hello; exec sleep 3600'\n")
+	t.Cleanup(func() { h.run("", "service", "down") })
+	if out, _, code := h.run("", "service", "systemctl", "--user", "is-system-running"); code != 1 || out != "offline\n" {
+		t.Errorf("is-system-running without a supervisor: exit %d, %q", code, out)
+	}
+	h.mustRun("", "service", "sync")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		out := h.mustRun("", "service", "journalctl", "--user", "-u", "app", "-o", "cat")
+		if strings.Contains(out, "\nhello\n") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("journalctl -o cat never showed the bare line: %q", out)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if out := h.mustRun("", "service", "systemctl", "--user", "is-active", "app"); out != "active\n" {
+		t.Errorf("is-active = %q", out)
+	}
+	if out := h.mustRun("", "service", "systemctl", "--user", "is-enabled", "app.service"); out != "enabled\n" {
+		t.Errorf("is-enabled = %q", out)
+	}
+	if out := h.mustRun("", "service", "systemctl", "--user", "is-system-running"); out != "running\n" {
+		t.Errorf("is-system-running = %q", out)
+	}
+	if out := h.mustRun("", "service", "systemctl", "--user", "cat", "app"); !strings.Contains(out, "ExecStart=/bin/sh") {
+		t.Errorf("cat = %q", out)
+	}
+	h.mustRun("", "service", "systemctl", "--user", "stop", "app")
+	if out, _, code := h.run("", "service", "systemctl", "--user", "is-active", "app"); code != 1 || out != "inactive\n" {
+		t.Errorf("is-active after stop: exit %d, %q", code, out)
+	}
+	h.mustRun("", "service", "systemctl", "--user", "try-restart", "app")
+	if out, _, _ := h.run("", "service", "systemctl", "--user", "is-active", "app"); out != "inactive\n" {
+		t.Errorf("try-restart started an inactive unit: %q", out)
+	}
+	h.mustRun("", "service", "systemctl", "--user", "daemon-reload")
+	if _, errOut, code := h.run("", "service", "systemctl", "--user", "enable", "--now", "app"); code != 1 || !strings.Contains(errOut, "home-manager") {
+		t.Errorf("enable: exit %d, %q", code, errOut)
+	}
+	if _, _, code := h.run("", "service", "systemctl", "start", "app"); code != 2 {
+		t.Errorf("systemctl without --user exited %d, want 2", code)
+	}
+}

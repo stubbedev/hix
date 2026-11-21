@@ -35,6 +35,18 @@ func (a *App) serviceLayout() (supervisor.Layout, error) {
 	return supervisor.DetectLayout(os.Getenv)
 }
 
+func (a *App) serviceProgram() (supervisor.Program, error) {
+	cfg, err := a.config()
+	if err != nil {
+		return supervisor.Program{}, err
+	}
+	self, err := selfExecutable()
+	if err != nil {
+		return supervisor.Program{}, err
+	}
+	return supervisor.Program{Executable: self, ExecPath: cfg.ExecPath}, nil
+}
+
 func selfExecutable() (string, error) {
 	path, err := os.Executable()
 	if err != nil {
@@ -83,6 +95,8 @@ With no subcommand, phix service prints the status of every unit.`,
 		a.serviceSyncCmd(),
 		a.serviceSuperviseCmd(),
 		a.serviceExecCmd(),
+		a.systemctlCmd(),
+		a.journalctlCmd(),
 	)
 	return cmd
 }
@@ -208,6 +222,8 @@ func unitDetail(st ui.Style, s supervisor.UnitStatus, now time.Time) string {
 		return st.Paint(s.LoadError, ui.Red)
 	case !s.NextElapse.IsZero():
 		return "next in " + ui.Duration(s.NextElapse.Sub(now)) + " → " + s.Triggers
+	case len(s.Listen) > 0:
+		return strings.Join(s.Listen, ", ") + " → " + s.Triggers
 	case s.MainPID != 0:
 		detail := "pid " + strconv.Itoa(s.MainPID)
 		if s.StatusText != "" {
@@ -258,6 +274,9 @@ func writeUnitDetail(p ui.Printer, s supervisor.UnitStatus, logs []string, now t
 	}
 	if s.StatusText != "" {
 		field("Status", strconv.Quote(s.StatusText))
+	}
+	if len(s.Listen) > 0 {
+		field("Listen", strings.Join(s.Listen, ", "))
 	}
 	if s.Triggers != "" {
 		trigger := s.Triggers
@@ -375,11 +394,11 @@ up when the nix-on-droid app first opens a session.`,
 			if err != nil {
 				return err
 			}
-			self, err := selfExecutable()
+			program, err := a.serviceProgram()
 			if err != nil {
 				return err
 			}
-			started, err := supervisor.Up(cmd.Context(), layout, self)
+			started, err := supervisor.Up(cmd.Context(), layout, program)
 			if err != nil {
 				return err
 			}
@@ -437,29 +456,29 @@ func (a *App) serviceSync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	self, err := selfExecutable()
+	program, err := a.serviceProgram()
 	if err != nil {
 		return err
 	}
 	client := supervisor.NewClient(layout)
-	resp, err := client.Call(ctx, supervisor.Request{Op: supervisor.OpSync, Executable: self})
+	resp, err := client.Call(ctx, supervisor.Request{Op: supervisor.OpSync, Executable: program.Executable, ExecPath: program.ExecPath})
 	if errors.Is(err, supervisor.ErrNotRunning) {
-		return a.bootSupervisor(ctx, layout, self)
+		return a.bootSupervisor(ctx, layout, program)
 	}
 	if err != nil {
 		return err
 	}
 	writeChanges(a.console.Stdout, resp.Changes)
 	if resp.Restarting {
-		if _, err := supervisor.Up(ctx, layout, self); err != nil {
+		if _, err := supervisor.Up(ctx, layout, program); err != nil {
 			return err
 		}
 	}
 	return failuresError(supervisor.OpSync, resp.Failures)
 }
 
-func (a *App) bootSupervisor(ctx context.Context, layout supervisor.Layout, self string) error {
-	if _, err := supervisor.Up(ctx, layout, self); err != nil {
+func (a *App) bootSupervisor(ctx context.Context, layout supervisor.Layout, program supervisor.Program) error {
+	if _, err := supervisor.Up(ctx, layout, program); err != nil {
 		return err
 	}
 	resp, err := supervisor.NewClient(layout).Call(ctx, supervisor.Request{Op: supervisor.OpStatus})
@@ -491,7 +510,10 @@ func writeChanges(w io.Writer, changes []supervisor.Change) {
 }
 
 func (a *App) serviceSuperviseCmd() *cobra.Command {
-	var readyFD int
+	var (
+		readyFD  int
+		execPath []string
+	)
 	cmd := &cobra.Command{
 		Use:    "supervise",
 		Short:  "Run the supervisor in the foreground",
@@ -510,16 +532,18 @@ func (a *App) serviceSuperviseCmd() *cobra.Command {
 			if readyFD > 0 {
 				ready = supervisor.ReadyReporter(os.NewFile(uintptr(readyFD), "ready"))
 			}
-			return supervisor.Supervise(cmd.Context(), layout, self, os.Environ(), ready)
+			return supervisor.Supervise(cmd.Context(), layout, supervisor.Program{Executable: self, ExecPath: execPath}, os.Environ(), ready)
 		},
 	}
 	cmd.Flags().IntVar(&readyFD, "ready-fd", 0, "file descriptor to report readiness on")
+	cmd.Flags().StringArrayVar(&execPath, "exec-path", nil, "directory searched for bare executable names after the unit's PATH")
 	return cmd
 }
 
 func (a *App) serviceExecCmd() *cobra.Command {
 	var nice, ioClass, ioPriority int
 	var umask string
+	var listenPID bool
 	cmd := &cobra.Command{
 		Use:    "exec [flags] -- <path> <argv0> [args...]",
 		Short:  "Apply process attributes and exec a unit's command",
@@ -528,7 +552,7 @@ func (a *App) serviceExecCmd() *cobra.Command {
 			if len(args) < 2 {
 				return usage.Errorf("%s needs a path and an argv[0]", cmd.CommandPath())
 			}
-			var spec supervisor.ExecSpec
+			spec := supervisor.ExecSpec{ListenPID: listenPID}
 			flags := cmd.Flags()
 			if flags.Changed("nice") {
 				spec.Nice = &nice
@@ -554,5 +578,6 @@ func (a *App) serviceExecCmd() *cobra.Command {
 	cmd.Flags().IntVar(&ioClass, "io-class", 0, "IO scheduling class")
 	cmd.Flags().IntVar(&ioPriority, "io-priority", 0, "IO scheduling priority")
 	cmd.Flags().StringVar(&umask, "umask", "", "octal umask")
+	cmd.Flags().BoolVar(&listenPID, "listen-pid", false, "set LISTEN_PID to this process for socket activation")
 	return cmd
 }

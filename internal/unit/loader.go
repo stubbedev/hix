@@ -213,6 +213,9 @@ func references(u *Unit) []Name {
 	if u.Timer != nil {
 		out = append(out, u.Timer.Unit)
 	}
+	if u.Socket != nil {
+		out = append(out, u.Socket.Service)
+	}
 	return out
 }
 

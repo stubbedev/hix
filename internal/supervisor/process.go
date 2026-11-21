@@ -118,11 +118,11 @@ type process struct {
 	done bool
 }
 
-func lookPath(name, pathEnv string) (string, error) {
+func lookPath(name, pathEnv string, fallback []string) (string, error) {
 	if filepath.IsAbs(name) {
 		return name, executable(name)
 	}
-	for _, dir := range filepath.SplitList(pathEnv) {
+	for _, dir := range append(filepath.SplitList(pathEnv), fallback...) {
 		if dir == "" || !filepath.IsAbs(dir) {
 			continue
 		}
@@ -131,7 +131,7 @@ func lookPath(name, pathEnv string) (string, error) {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("executable %q not found in PATH %q", name, pathEnv)
+	return "", fmt.Errorf("executable %q not found in PATH %q or the exec path %q", name, pathEnv, fallback)
 }
 
 func executable(path string) error {
@@ -146,18 +146,22 @@ func executable(path string) error {
 }
 
 type attributes struct {
-	nice    *int
-	ioClass *int
-	ioPrio  *int
-	umask   *int
+	nice      *int
+	ioClass   *int
+	ioPrio    *int
+	umask     *int
+	listenPID bool
 }
 
 func (a attributes) any() bool {
-	return a.nice != nil || a.ioClass != nil || a.ioPrio != nil || a.umask != nil
+	return a.nice != nil || a.ioClass != nil || a.ioPrio != nil || a.umask != nil || a.listenPID
 }
 
 func (a attributes) helperArgs() []string {
 	var args []string
+	if a.listenPID {
+		args = append(args, "--listen-pid")
+	}
 	if a.nice != nil {
 		args = append(args, "--nice", strconv.Itoa(*a.nice))
 	}

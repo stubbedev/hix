@@ -3,6 +3,8 @@ package unit
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"net"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -33,6 +35,16 @@ var ignoredExact = map[string][]string{
 		"LogsDirectoryMode", "ConfigurationDirectoryMode", "RuntimeDirectoryPreserve",
 	},
 	"Timer": {"AccuracySec", "WakeSystem", "OnClockChange", "OnTimezoneChange"},
+	"Socket": {
+		"Backlog", "PassCredentials", "PassSecurity", "PassPacketInfo", "KeepAlive", "KeepAliveTimeSec",
+		"KeepAliveIntervalSec", "KeepAliveProbes", "NoDelay", "Priority", "ReceiveBuffer", "SendBuffer",
+		"IPTOS", "IPTTL", "Mark", "ReusePort", "FreeBind", "Transparent", "Broadcast", "BindIPv6Only",
+		"BindToDevice", "DeferAcceptSec", "TriggerLimitIntervalSec", "TriggerLimitBurst",
+		"PollLimitIntervalSec", "PollLimitBurst", "Timestamping", "SocketUser", "SocketGroup",
+		"SELinuxContextFromNet", "SmackLabel", "SmackLabelIPIn", "SmackLabelIPOut", "Writable",
+		"FlushPending", "MaxConnections", "MaxConnectionsPerSource", "PipeSize", "MessageQueueMaxMessages",
+		"MessageQueueMessageSize", "TimeoutSec",
+	},
 }
 
 var ignoredPrefixes = map[string][]string{
@@ -79,6 +91,8 @@ func newBuilder(name Name, host Host, local *time.Location) *builder {
 		}
 	case Timer:
 		u.Timer = &TimerConfig{RemainAfterElapse: true, Unit: name.WithKind(Service)}
+	case Socket:
+		u.Socket = &SocketConfig{Service: name.WithKind(Service), SocketMode: 0o666, DirectoryMode: 0o755, FDName: name.String()}
 	}
 	return &builder{u: u, spec: specifiers{host: host, name: name}, host: host, local: local}
 }
@@ -111,6 +125,11 @@ func (b *builder) apply(section, key, value string) error {
 			return fmt.Errorf("[Timer] section in a %s unit", b.u.Name.Kind())
 		}
 		handled, err = b.applyTimer(key, value)
+	case "Socket":
+		if b.u.Socket == nil {
+			return fmt.Errorf("[Socket] section in a %s unit", b.u.Name.Kind())
+		}
+		handled, err = b.applySocket(key, value)
 	default:
 		return fmt.Errorf("section [%s] is not supported", section)
 	}
@@ -380,6 +399,85 @@ func (b *builder) applyTimer(key, value string) (bool, error) {
 	return true, err
 }
 
+func (b *builder) applySocket(key, value string) (bool, error) {
+	s := b.u.Socket
+	var err error
+	switch key {
+	case "ListenStream":
+		err = b.listen(ListenStream, value)
+	case "ListenDatagram":
+		err = b.listen(ListenDatagram, value)
+	case "ListenSequentialPacket":
+		err = b.listen(ListenSeqPacket, value)
+	case "Accept":
+		var accept bool
+		if accept, err = parseBool(value); err == nil && accept {
+			err = errors.New("one service instance per connection (Accept=yes) is not supported")
+		}
+	case "Service":
+		var expanded string
+		if expanded, err = b.spec.expand(value); err == nil {
+			s.Service, err = ParseName(expanded)
+		}
+		if err == nil && s.Service.Kind() != Service {
+			err = fmt.Errorf("%s is not a service unit", s.Service)
+		}
+	case "SocketMode":
+		s.SocketMode, err = parseMode(value)
+	case "DirectoryMode":
+		s.DirectoryMode, err = parseMode(value)
+	case "RemoveOnStop":
+		s.RemoveOnStop, err = parseBool(value)
+	case "FileDescriptorName":
+		if value == "" || len(value) > 255 || strings.ContainsAny(value, ": \t\n") {
+			err = fmt.Errorf("file descriptor name %q is not valid", value)
+		}
+		s.FDName = value
+	default:
+		return false, nil
+	}
+	return true, err
+}
+
+func (b *builder) listen(kind ListenKind, value string) error {
+	s := b.u.Socket
+	if value == "" {
+		s.Listen = nil
+		return nil
+	}
+	addr, err := b.spec.expand(value)
+	if err != nil {
+		return err
+	}
+	switch {
+	case filepath.IsAbs(addr):
+		s.Listen = append(s.Listen, Listen{Kind: kind, Unix: filepath.Clean(addr)})
+		return nil
+	case strings.HasPrefix(addr, "@"):
+		return fmt.Errorf("abstract socket %q is not supported", addr)
+	case kind == ListenSeqPacket:
+		return fmt.Errorf("sequential packet socket %q must be a unix path", addr)
+	}
+	if port, perr := strconv.Atoi(addr); perr == nil {
+		if port < 1 || port > 65535 {
+			return fmt.Errorf("port %d is outside 1..65535", port)
+		}
+		addr = ":" + addr
+	} else if _, _, serr := net.SplitHostPort(addr); serr != nil {
+		return fmt.Errorf("listen address %q is neither an absolute path, a port nor host:port: %w", addr, serr)
+	}
+	s.Listen = append(s.Listen, Listen{Kind: kind, Address: addr})
+	return nil
+}
+
+func parseMode(s string) (fs.FileMode, error) {
+	m, err := strconv.ParseUint(s, 8, 12)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not an octal file mode", s)
+	}
+	return fs.FileMode(m) & fs.ModePerm, nil
+}
+
 func (b *builder) names(dst *[]Name, value string) error {
 	if value == "" {
 		*dst = nil
@@ -576,12 +674,24 @@ func parseSignal(s string) (syscall.Signal, error) {
 	return 0, fmt.Errorf("%q is not a signal", s)
 }
 
+var exitStatusNames = map[string]int{
+	"SUCCESS": 0, "FAILURE": 1, "INVALIDARGUMENT": 2, "NOTIMPLEMENTED": 3, "NOPERMISSION": 4,
+	"NOTINSTALLED": 5, "NOTCONFIGURED": 6, "NOTRUNNING": 7,
+	"USAGE": 64, "DATAERR": 65, "NOINPUT": 66, "NOUSER": 67, "NOHOST": 68, "UNAVAILABLE": 69,
+	"SOFTWARE": 70, "OSERR": 71, "OSFILE": 72, "CANTCREAT": 73, "IOERR": 74, "TEMPFAIL": 75,
+	"PROTOCOL": 76, "NOPERM": 77, "CONFIG": 78,
+}
+
 func parseExitSet(dst *ExitSet, value string) error {
 	if value == "" {
 		*dst = ExitSet{}
 		return nil
 	}
 	for w := range strings.FieldsSeq(value) {
+		if n, ok := exitStatusNames[w]; ok {
+			dst.Codes = append(dst.Codes, n)
+			continue
+		}
 		if n, err := strconv.Atoi(w); err == nil {
 			if n < 0 || n > 255 {
 				return fmt.Errorf("exit status %d is outside 0..255", n)
@@ -591,7 +701,7 @@ func parseExitSet(dst *ExitSet, value string) error {
 		}
 		sig, err := parseSignal(w)
 		if err != nil {
-			return errors.New("exit status " + strconv.Quote(w) + " is neither a number nor a signal")
+			return errors.New("exit status " + strconv.Quote(w) + " is neither a number, an exit status name nor a signal")
 		}
 		dst.Signals = append(dst.Signals, sig)
 	}
@@ -618,6 +728,14 @@ func (b *builder) finish() error {
 		}
 		if s.Type == Oneshot && !b.timeoutStartSet {
 			s.TimeoutStart = 0
+		}
+	}
+	if s := u.Socket; s != nil {
+		if len(s.Listen) == 0 {
+			return errors.New("a socket needs at least one Listen*= address")
+		}
+		if !slices.Contains(u.Deps.Before, s.Service) {
+			u.Deps.Before = append(u.Deps.Before, s.Service)
 		}
 	}
 	if t := u.Timer; t != nil {

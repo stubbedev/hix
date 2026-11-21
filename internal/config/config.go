@@ -78,6 +78,7 @@ type Config struct {
 	Platform   Platform
 	Attr       string
 	SSHKey     string
+	ExecPath   []string
 	PostSwitch []Hook
 	Commands   []Command
 }
@@ -117,10 +118,11 @@ type fileHook struct {
 }
 
 type file struct {
-	Flake    string `yaml:"flake"`
-	Platform string `yaml:"platform"`
-	Attr     string `yaml:"attr"`
-	SSHKey   string `yaml:"ssh_key"`
+	Flake    string   `yaml:"flake"`
+	Platform string   `yaml:"platform"`
+	Attr     string   `yaml:"attr"`
+	SSHKey   string   `yaml:"ssh_key"`
+	ExecPath []string `yaml:"exec_path"`
 	Hooks    struct {
 		PostSwitch []fileHook `yaml:"post_switch"`
 	} `yaml:"hooks"`
@@ -194,6 +196,7 @@ func Parse(data []byte, getenv func(string) string) (Config, error) {
 		Platform: platform,
 		Attr:     f.Attr,
 		SSHKey:   f.SSHKey,
+		ExecPath: f.ExecPath,
 	}
 	if dir := getenv(EnvFlakeDir); dir != "" {
 		cfg.Flake = dir
@@ -210,6 +213,11 @@ func Parse(data []byte, getenv func(string) string) (Config, error) {
 	}
 	if !filepath.IsAbs(cfg.SSHKey) {
 		return Config{}, fmt.Errorf("ssh_key %q is not an absolute path", cfg.SSHKey)
+	}
+	for _, dir := range cfg.ExecPath {
+		if !filepath.IsAbs(dir) {
+			return Config{}, fmt.Errorf("exec_path entry %q is not an absolute path", dir)
+		}
 	}
 	if cfg.PostSwitch, err = parseHooks(f.Hooks.PostSwitch); err != nil {
 		return Config{}, err

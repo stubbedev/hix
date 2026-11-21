@@ -20,13 +20,16 @@ import (
 const helperEnv = "PHIX_SUPERVISOR_TEST_HELPER"
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 3 && os.Args[1] == "service" && os.Args[2] == "exec" {
+		execHelper(os.Args[3:])
+		return
+	}
 	switch os.Getenv(helperEnv) {
 	case "notify":
 		notifyHelper()
 		return
-	}
-	if len(os.Args) > 3 && os.Args[1] == "service" && os.Args[2] == "exec" {
-		execHelper(os.Args[3:])
+	case "socket":
+		socketHelper()
 		return
 	}
 	os.Exit(m.Run())
@@ -44,9 +47,34 @@ func notifyHelper() {
 	time.Sleep(time.Hour)
 }
 
+func socketHelper() {
+	if os.Getenv("LISTEN_PID") != strconv.Itoa(os.Getpid()) || os.Getenv("LISTEN_FDS") != "1" {
+		fmt.Fprintf(os.Stderr, "LISTEN_PID=%s LISTEN_FDS=%s pid=%d\n", os.Getenv("LISTEN_PID"), os.Getenv("LISTEN_FDS"), os.Getpid())
+		os.Exit(6)
+	}
+	l, err := net.FileListener(os.NewFile(3, "listen"))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(7)
+	}
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			os.Exit(8)
+		}
+		fmt.Fprintf(conn, "hello %s\n", os.Getenv("LISTEN_FDNAMES"))
+		conn.Close()
+	}
+}
+
 func execHelper(args []string) {
 	var spec ExecSpec
 	for len(args) > 0 && args[0] != "--" {
+		if args[0] == "--listen-pid" {
+			spec.ListenPID = true
+			args = args[1:]
+			continue
+		}
 		n, err := strconv.ParseInt(args[1], 8, 32)
 		if args[0] != "--umask" {
 			n, err = strconv.ParseInt(args[1], 10, 32)
@@ -166,7 +194,7 @@ func (h *harness) start() {
 	h.cancel, h.done = cancel, make(chan error, 1)
 	readyCh := make(chan error, 1)
 	go func() {
-		h.done <- Supervise(ctx, h.layout, self, os.Environ(), func(err error) { readyCh <- err })
+		h.done <- Supervise(ctx, h.layout, Program{Executable: self}, os.Environ(), func(err error) { readyCh <- err })
 	}()
 	if err := <-readyCh; err != nil {
 		h.t.Fatalf("supervisor did not become ready: %v", err)
@@ -550,7 +578,7 @@ func TestShutdownStopsEverything(t *testing.T) {
 func TestSecondSupervisorReportsRunning(t *testing.T) {
 	h := newHarness(t)
 	h.start()
-	err := Supervise(context.Background(), h.layout, "/bin/false", nil, func(err error) {
+	err := Supervise(context.Background(), h.layout, Program{Executable: "/bin/false"}, nil, func(err error) {
 		if !errors.Is(err, ErrAlreadyRunning) {
 			t.Errorf("ready = %v, want ErrAlreadyRunning", err)
 		}
@@ -703,4 +731,100 @@ func TestFollowStreamsNewLines(t *testing.T) {
 	if len(got) != 4 {
 		t.Errorf("followed %d lines, want 4: %q", len(got), got)
 	}
+}
+
+func TestSocketActivation(t *testing.T) {
+	h := newHarness(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sock := filepath.Join(h.layout.Host.RuntimeDir, "echo", "echo.sock")
+	h.install("echo.socket", "[Socket]\nListenStream=%t/echo/echo.sock\nSocketMode=0600\nFileDescriptorName=greeter\nBacklog=16\n", "sockets.target")
+	h.install("echo.service", fmt.Sprintf("[Service]\nEnvironment=%s=socket\nExecStart=%s\n", helperEnv, self))
+	h.start()
+	s := h.waitState("echo.socket", "active", "listening")
+	if s.Triggers != "echo.service" || !slices.Equal(s.Listen, []string{sock}) || !slices.Equal(s.Ignored, []string{"Socket.Backlog"}) {
+		t.Errorf("socket status = %+v", s)
+	}
+	if svc := h.status("echo.service"); svc.Active != "inactive" {
+		t.Fatalf("echo.service started before any connection: %+v", svc)
+	}
+	info, err := os.Stat(sock)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("socket file %s: %v, mode %v", sock, err, info)
+	}
+	read := func() string {
+		conn, err := net.Dial("unix", sock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		buf := make([]byte, 64)
+		if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			t.Fatal(err)
+		}
+		n, err := conn.Read(buf)
+		if err != nil {
+			t.Fatalf("reading from the activated service: %v; log:\n%s", err, strings.Join(h.logs("echo.service"), "\n"))
+		}
+		return string(buf[:n])
+	}
+	if got := read(); got != "hello greeter\n" {
+		t.Errorf("first connection got %q", got)
+	}
+	h.waitState("echo.service", "active", "running")
+	if got := read(); got != "hello greeter\n" {
+		t.Errorf("second connection got %q", got)
+	}
+	h.control(OpStop, "echo.service")
+	h.waitState("echo.socket", "active", "listening")
+	if got := read(); got != "hello greeter\n" {
+		t.Errorf("connection after the service stopped got %q", got)
+	}
+	h.control(OpStop, "echo.socket")
+	if _, err := os.Stat(sock); err != nil {
+		t.Errorf("the socket file went away without RemoveOnStop: %v", err)
+	}
+}
+
+func TestSocketFailsWhenItsServiceCannotStart(t *testing.T) {
+	h := newHarness(t)
+	h.install("dead.socket", "[Socket]\nListenStream=%t/dead.sock\n", "sockets.target")
+	h.install("dead.service", "[Service]\nExecStart=/nonexistent/phix-binary\n")
+	h.start()
+	h.waitState("dead.socket", "active", "listening")
+	conn, err := net.Dial("unix", filepath.Join(h.layout.Host.RuntimeDir, "dead.sock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	h.waitState("dead.socket", "failed", "failed")
+}
+
+func TestNamedExitStatusAndExecPath(t *testing.T) {
+	h := newHarness(t)
+	bin := filepath.Join(h.layout.Host.Home, "tools")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "phix-datafail"), []byte("#!/bin/sh\nexit 65\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.install("tmpfiles.service", "[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=phix-datafail\nSuccessExitStatus=DATAERR\n", "default.target")
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	h.cancel, h.done = cancel, make(chan error, 1)
+	readyCh := make(chan error, 1)
+	go func() {
+		h.done <- Supervise(ctx, h.layout, Program{Executable: self, ExecPath: []string{bin}}, os.Environ(), func(err error) { readyCh <- err })
+	}()
+	if err := <-readyCh; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(h.stop)
+	h.waitState("tmpfiles.service", "active", "exited")
 }

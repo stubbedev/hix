@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"io/fs"
 	"syscall"
 	"time"
 )
@@ -23,6 +24,7 @@ type Unit struct {
 	Ignored           []string
 	Service           *ServiceConfig
 	Timer             *TimerConfig
+	Socket            *SocketConfig
 }
 
 func (u *Unit) Label() string {
@@ -206,6 +208,50 @@ type TimerConfig struct {
 	FixedRandomDelay  bool
 	RemainAfterElapse bool
 	Unit              Name
+}
+
+type ListenKind int
+
+const (
+	ListenStream ListenKind = iota + 1
+	ListenDatagram
+	ListenSeqPacket
+)
+
+type Listen struct {
+	Kind    ListenKind
+	Unix    string
+	Address string
+}
+
+func (l Listen) Network() string {
+	switch {
+	case l.Unix != "" && l.Kind == ListenStream:
+		return "unix"
+	case l.Unix != "" && l.Kind == ListenDatagram:
+		return "unixgram"
+	case l.Unix != "":
+		return "unixpacket"
+	case l.Kind == ListenStream:
+		return "tcp"
+	}
+	return "udp"
+}
+
+func (l Listen) String() string {
+	if l.Unix != "" {
+		return l.Unix
+	}
+	return l.Address
+}
+
+type SocketConfig struct {
+	Listen        []Listen
+	Service       Name
+	SocketMode    fs.FileMode
+	DirectoryMode fs.FileMode
+	RemoveOnStop  bool
+	FDName        string
 }
 
 type ConditionKind int

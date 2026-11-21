@@ -48,7 +48,7 @@ func (k Kind) String() string {
 }
 
 func (k Kind) Supported() bool {
-	return k == Service || k == Timer || k == Target
+	return k == Service || k == Timer || k == Target || k == Socket
 }
 
 func parseKind(suffix string) (Kind, bool) {

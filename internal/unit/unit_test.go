@@ -338,7 +338,8 @@ func TestLoadErrorsArePerUnit(t *testing.T) {
 	tr.install("good.service", "[Service]\nExecStart=/bin/true\n[Unit]\nWants=missing.service\n", "default.target")
 	tr.install("forking.service", "[Service]\nType=forking\nExecStart=/bin/true\n", "default.target")
 	tr.install("unknown.service", "[Service]\nExecStart=/bin/true\nFrobnicate=yes\n")
-	tr.install("tmux.socket", "[Socket]\nListenStream=%t/tmux\n", "sockets.target")
+	tr.install("watch.path", "[Path]\nPathChanged=%h/x\n", "paths.target")
+	tr.install("accept.socket", "[Socket]\nListenStream=%t/a\nAccept=yes\n", "sockets.target")
 	tr.install("user.service", "[Service]\nExecStart=/bin/true\nUser=root\n")
 
 	set := tr.load()
@@ -348,7 +349,8 @@ func TestLoadErrorsArePerUnit(t *testing.T) {
 	for unitName, fragment := range map[string]string{
 		"forking.service": `service type "forking" is not supported`,
 		"unknown.service": "Frobnicate= is not supported",
-		"tmux.socket":     "socket units are not supported",
+		"watch.path":      "path units are not supported",
+		"accept.socket":   "(Accept=yes)",
 		"missing.service": "unit file not found",
 		"user.service":    "User= is not supported",
 	} {
@@ -401,5 +403,41 @@ func TestConditions(t *testing.T) {
 		if got, why := CheckConditions(c.conds, env, host); got != c.want {
 			t.Errorf("case %d: CheckConditions = %v (%s), want %v", i, got, why, c.want)
 		}
+	}
+}
+
+func TestLoadSocket(t *testing.T) {
+	tr := newTree(t)
+	tr.install("tmux.socket", "[Unit]\nDescription=tmux socket\n[Socket]\nListenStream=%t/tmux/tmux-%U/default\nListenDatagram=127.0.0.1:5353\nListenStream=8080\nSocketMode=0600\nDirectoryMode=0700\n[Install]\nWantedBy=sockets.target\n", "sockets.target")
+	tr.install("tmux.service", "[Service]\nExecStart=/bin/tmux -D\n")
+	set := tr.load()
+	u := set.Units[name(t, "tmux.socket")]
+	if u == nil {
+		t.Fatalf("tmux.socket failed: %v", set.Errors[name(t, "tmux.socket")])
+	}
+	s := u.Socket
+	want := []Listen{
+		{Kind: ListenStream, Unix: filepath.Join(tr.host.RuntimeDir, "tmux", "tmux-10123", "default")},
+		{Kind: ListenDatagram, Address: "127.0.0.1:5353"},
+		{Kind: ListenStream, Address: ":8080"},
+	}
+	if !reflect.DeepEqual(s.Listen, want) || s.SocketMode != 0o600 || s.DirectoryMode != 0o700 || s.Service != name(t, "tmux.service") || s.FDName != "tmux.socket" {
+		t.Errorf("socket = %+v", s)
+	}
+	if !slices.Contains(u.Deps.Before, name(t, "tmux.service")) {
+		t.Error("the socket is not ordered before its service")
+	}
+	if set.Units[name(t, "tmux.service")] == nil {
+		t.Error("the socket's service was not loaded")
+	}
+}
+
+func TestNamedExitStatuses(t *testing.T) {
+	var set ExitSet
+	if err := parseExitSet(&set, "DATAERR 3 SIGUSR1"); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(set.Codes, []int{65, 3}) || !slices.Equal(set.Signals, []syscall.Signal{syscall.SIGUSR1}) {
+		t.Errorf("exit set = %+v", set)
 	}
 }

@@ -23,7 +23,7 @@ func (c Client) Ping(ctx context.Context) error {
 	return err
 }
 
-func Up(ctx context.Context, layout Layout, executable string) (bool, error) {
+func Up(ctx context.Context, layout Layout, program Program) (bool, error) {
 	err := NewClient(layout).Ping(ctx)
 	if err == nil {
 		return false, nil
@@ -31,10 +31,10 @@ func Up(ctx context.Context, layout Layout, executable string) (bool, error) {
 	if !errors.Is(err, ErrNotRunning) {
 		return false, err
 	}
-	return spawn(layout, executable)
+	return spawn(layout, program)
 }
 
-func spawn(layout Layout, executable string) (bool, error) {
+func spawn(layout Layout, program Program) (bool, error) {
 	if err := os.MkdirAll(layout.State, 0o700); err != nil {
 		return false, fmt.Errorf("creating %s: %w", layout.State, err)
 	}
@@ -48,9 +48,13 @@ func spawn(layout Layout, executable string) (bool, error) {
 		return false, fmt.Errorf("creating the readiness pipe: %w", err)
 	}
 	defer r.Close()
+	args := []string{program.Executable, "service", "supervise", "--ready-fd", "3"}
+	for _, dir := range program.ExecPath {
+		args = append(args, "--exec-path", dir)
+	}
 	cmd := &exec.Cmd{
-		Path:        executable,
-		Args:        []string{executable, "service", "supervise", "--ready-fd", "3"},
+		Path:        program.Executable,
+		Args:        args,
 		Dir:         layout.Host.Home,
 		Stderr:      stderr,
 		ExtraFiles:  []*os.File{w},

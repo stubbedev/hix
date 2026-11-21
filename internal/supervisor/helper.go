@@ -3,6 +3,7 @@ package supervisor
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"syscall"
 )
 
@@ -11,9 +12,15 @@ type ExecSpec struct {
 	IOClass    *int
 	IOPriority *int
 	UMask      *int
+	ListenPID  bool
 }
 
 func Exec(spec ExecSpec, path string, argv []string) error {
+	if spec.ListenPID {
+		if err := os.Setenv("LISTEN_PID", strconv.Itoa(os.Getpid())); err != nil {
+			return fmt.Errorf("setting LISTEN_PID: %w", err)
+		}
+	}
 	if spec.UMask != nil {
 		syscall.Umask(*spec.UMask)
 	}

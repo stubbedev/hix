@@ -15,21 +15,24 @@ import (
 type Op string
 
 const (
-	OpPing     Op = "ping"
-	OpStatus   Op = "status"
-	OpStart    Op = "start"
-	OpStop     Op = "stop"
-	OpRestart  Op = "restart"
-	OpReload   Op = "reload"
-	OpSync     Op = "sync"
-	OpShutdown Op = "shutdown"
-	OpFollow   Op = "follow"
+	OpPing         Op = "ping"
+	OpStatus       Op = "status"
+	OpStart        Op = "start"
+	OpStop         Op = "stop"
+	OpRestart      Op = "restart"
+	OpReload       Op = "reload"
+	OpSync         Op = "sync"
+	OpDaemonReload Op = "daemon-reload"
+	OpResetFailed  Op = "reset-failed"
+	OpShutdown     Op = "shutdown"
+	OpFollow       Op = "follow"
 )
 
 type Request struct {
 	Op         Op       `json:"op"`
 	Units      []string `json:"units,omitempty"`
 	Executable string   `json:"executable,omitempty"`
+	ExecPath   []string `json:"exec_path,omitempty"`
 	Lines      int      `json:"lines,omitempty"`
 }
 
@@ -63,6 +66,7 @@ type UnitStatus struct {
 	Wanted      bool      `json:"wanted,omitempty"`
 	Ignored     []string  `json:"ignored,omitempty"`
 	Triggers    string    `json:"triggers,omitempty"`
+	Listen      []string  `json:"listen,omitempty"`
 	NextElapse  time.Time `json:"next_elapse,omitzero"`
 	LastTrigger time.Time `json:"last_trigger,omitzero"`
 }

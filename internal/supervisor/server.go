@@ -22,7 +22,7 @@ import (
 
 var ErrAlreadyRunning = errors.New("another phix service supervisor is already running")
 
-func Supervise(ctx context.Context, layout Layout, helper string, inherited []string, ready func(error)) error {
+func Supervise(ctx context.Context, layout Layout, program Program, inherited []string, ready func(error)) error {
 	if err := layout.prepare(); err != nil {
 		ready(err)
 		return err
@@ -65,7 +65,7 @@ func Supervise(ctx context.Context, layout Layout, helper string, inherited []st
 		return errors.Join(err, listener.Close())
 	}
 
-	m := newManager(layout, helper, inherited)
+	m := newManager(layout, program, inherited)
 	if err := m.loadUnits(); err != nil {
 		ready(err)
 		return errors.Join(err, listener.Close())
@@ -127,6 +127,15 @@ func (m *Manager) serve(conn net.Conn) {
 		send(m.control(req.Op, req.Units))
 	case OpSync:
 		m.serveSync(req, send)
+	case OpDaemonReload:
+		send(m.ask(func() Response {
+			if err := m.loadUnits(); err != nil {
+				return Response{Error: err.Error()}
+			}
+			return Response{Done: true}
+		}))
+	case OpResetFailed:
+		send(m.ask(func() Response { return m.resetFailed(req.Units) }))
 	case OpShutdown:
 		m.post(m.beginShutdown)
 		<-m.done
@@ -225,7 +234,7 @@ func (m *Manager) control(op Op, args []string) Response {
 }
 
 func (m *Manager) serveSync(req Request, send func(Response) bool) {
-	if req.Executable != "" && filepath.Clean(req.Executable) != m.helper {
+	if req.Executable != "" && filepath.Clean(req.Executable) != m.program.Executable {
 		r := m.ask(func() Response {
 			var changes []Change
 			for _, n := range sortedNames(m.states) {
@@ -233,7 +242,7 @@ func (m *Manager) serveSync(req Request, send func(Response) bool) {
 					changes = append(changes, Change{Action: ActionRestart, Unit: n.String()})
 				}
 			}
-			m.slog("phix changed from %s to %s, restarting the supervisor", m.helper, req.Executable)
+			m.slog("phix changed from %s to %s, restarting the supervisor", m.program.Executable, req.Executable)
 			m.beginShutdown()
 			return Response{Restarting: true, Changes: changes}
 		})
@@ -243,6 +252,7 @@ func (m *Manager) serveSync(req Request, send func(Response) bool) {
 	}
 	reply := make(chan Response, 1)
 	m.post(func() {
+		m.program.ExecPath = req.ExecPath
 		m.sync(func(changes []Change, failures []string, err error) {
 			if err != nil {
 				reply <- Response{Error: err.Error()}
@@ -352,6 +362,12 @@ func (m *Manager) status(args []string) Response {
 				s.Job = "restart"
 			}
 		}
+		if sock := st.u.Socket; sock != nil {
+			s.Triggers = sock.Service.String()
+			for _, l := range sock.Listen {
+				s.Listen = append(s.Listen, l.String())
+			}
+		}
 		if t := st.u.Timer; t != nil {
 			s.Triggers = t.Unit.String()
 			if run := st.timer; run != nil {
@@ -372,4 +388,24 @@ func utcOrZero(t time.Time) time.Time {
 		return t
 	}
 	return t.UTC()
+}
+
+func (m *Manager) resetFailed(args []string) Response {
+	names := sortedNames(m.states)
+	if len(args) > 0 {
+		resolved, err := m.resolve(args)
+		if err != nil {
+			return Response{Error: err.Error()}
+		}
+		names = resolved
+	}
+	for _, n := range names {
+		st := m.states[n]
+		st.starts = nil
+		if st.active == stateFailed {
+			st.result = ""
+			m.setState(st, stateInactive, "dead")
+		}
+	}
+	return Response{Done: true}
 }

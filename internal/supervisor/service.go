@@ -561,16 +561,23 @@ func (m *Manager) spawn(st *state, role string, c unit.Command) (*process, error
 		env = env.Clone()
 		env["MAINPID"] = strconv.Itoa(st.main.pid)
 	}
-	path, err := lookPath(c.Path, env["PATH"])
+	var sockets []*os.File
+	if role == "main" {
+		files, names := m.socketFiles(st)
+		if len(files) > 0 {
+			sockets, env = files, listenEnv(env, names)
+		}
+	}
+	path, err := lookPath(c.Path, env["PATH"], m.program.ExecPath)
 	if err != nil {
 		return nil, err
 	}
 	argv := c.Argv(env.Lookup)
 	cmdPath, cmdArgs := path, argv
-	attrs := attributes{nice: s.Nice, ioClass: s.IOSchedulingClass, ioPrio: s.IOSchedulingPriority, umask: s.UMask}
+	attrs := attributes{nice: s.Nice, ioClass: s.IOSchedulingClass, ioPrio: s.IOSchedulingPriority, umask: s.UMask, listenPID: len(sockets) > 0}
 	if attrs.any() {
-		cmdPath = m.helper
-		cmdArgs = append([]string{m.helper, "service", "exec"}, attrs.helperArgs()...)
+		cmdPath = m.program.Executable
+		cmdArgs = append([]string{m.program.Executable, "service", "exec"}, attrs.helperArgs()...)
 		cmdArgs = append(append(cmdArgs, "--", path), argv...)
 	}
 	dir := s.WorkingDirectory
@@ -595,6 +602,7 @@ func (m *Manager) spawn(st *state, role string, c unit.Command) (*process, error
 		Dir:         dir,
 		Stdout:      stdout,
 		Stderr:      stderr,
+		ExtraFiles:  sockets,
 		SysProcAttr: &syscall.SysProcAttr{Setpgid: true},
 	}
 	if err := cmd.Start(); err != nil {
